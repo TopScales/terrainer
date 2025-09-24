@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<svg
+   width="16"
+   height="16"
+   version="1.1"
+   viewBox="0 0 16 16"
+   id="svg1"
+   sodipodi:docname="TTerrain.svg"
+   inkscape:version="1.4.2 (f4327f4, 2025-05-13)"
+   xmlns:inkscape="http://www.inkscape.org/namespaces/inkscape"
+   xmlns:sodipodi="http://sodipodi.sourceforge.net/DTD/sodipodi-0.dtd"
+   xmlns="http://www.w3.org/2000/svg"
+   xmlns:svg="http://www.w3.org/2000/svg">
+  <defs
+     id="defs1" />
+  <sodipodi:namedview
+     id="namedview1"
+     pagecolor="#505050"
+     bordercolor="#eeeeee"
+     borderopacity="1"
+     inkscape:showpageshadow="0"
+     inkscape:pageopacity="0"
+     inkscape:pagecheckerboard="0"
+     inkscape:deskcolor="#505050"
+     inkscape:zoom="2.2617436"
+     inkscape:cx="-43.771541"
+     inkscape:cy="-48.413977"
+     inkscape:window-width="1920"
+     inkscape:window-height="1009"
+     inkscape:window-x="-8"
+     inkscape:window-y="-8"
+     inkscape:window-maximized="1"
+     inkscape:current-layer="svg1" />
+  <g
+     transform="translate(0 -292.77)"
+     id="g1"
+     style="fill:#fc7f7f;fill-opacity:1">
+    <path
+       d="m 9.6483,293.77 c -1.1204534,0 -2.0695884,5.85548 -2.7308,5.9113 -0.7805805,0.0659 -1.6489994,-3.34801 -2.6351,-3.3352 -1.2069493,0.0157 -3.1858,7.5534 -3.2823,8.4239 H 6 c 2.0018304,2.01778 -0.2606137,1.78568 -1,3 h 5 c 0.286306,-1.13766 1.496067,-0.9837 -1,-3 h 6.0001 c -1.153326,-4.41949 -4.270357,-11 -5.3518,-11 z"
+       fill="#fc7e7e"
+       fill-opacity=".99608"
+       id="path1"
+       style="fill:#fc7f7f;fill-opacity:1"
+       sodipodi:nodetypes="sssccccccs" />
+  </g>
+</svg>
