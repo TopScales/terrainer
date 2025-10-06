@@ -12,10 +12,10 @@
 #ifndef TERRAINER_TERRAIN_H
 #define TERRAINER_TERRAIN_H
 
+#include "terrain_info.h"
 #include "lod_quad_tree.h"
 #include "scene/3d/node_3d.h"
 #include "scene/3d/camera_3d.h"
-#include "utils.h"
 
 class TTerrain : public Node3D {
     GDCLASS(TTerrain, Node3D);
@@ -23,34 +23,56 @@ class TTerrain : public Node3D {
 private:
     static const real_t UPDATE_TOLERANCE_FACTOR;
     static const int MAX_CHUNK_SIZE = 2048;
-    static const int MIN_QUAD_TREE_LEAD_SIZE = 2;
 
-    int chunk_size = 32;
-    Vector2i chunk_world_offset;
-    bool centered = false;
-    real_t quad_size = 1.0;
-    bool chunk_manual_update = false;
-    Vector2i chunk_active;
+    static const int DIRTY_DATA = 1 << 1;
+    static const int DIRTY_CHUNKS = 1 << 2;
 
-    int mesh_render_resolution_multiplier = 1;
-    int mesh_lod_detail_levels = 4;
+    static const real_t DEBUG_AABB_LOD0_MARGIN;
+    static const real_t DEBUG_AABB_MARGIN_LOD_SCALE_FACTOR;
 
-    TTerrainData data;
+    int lod_detailed_chunks_radius = 4;
+
+    // bool chunk_manual_update = false;
+    // Vector2i chunk_active;
+
+    TTerrainInfo info;
+    RID mesh;
+    Camera3D *camera = nullptr;
     Ref<TLODQuadTree> quad_tree;
-    Transform3D last_transform;
-    Transform3D viewer_transform;
+    real_t far_view = 0.0;
     bool dirty = false;
-    bool update_view = false;
-    real_t update_distance_tolerance_squared = (chunk_size * quad_size * UPDATE_TOLERANCE_FACTOR) * (chunk_size * quad_size * UPDATE_TOLERANCE_FACTOR);
-    Camera3D *camera;
+    bool mesh_valid = false;
+    real_t update_distance_tolerance_squared = 1.0;
+    Transform3D viewer_transform;
+    Transform3D last_transform;
+    Vector3 chunk_offset;
+
+    struct DebugAABB {
+        RID shader;
+        RID material;
+        RID mesh;
+        RID multimesh;
+        RID instance;
+        PackedColorArray lod_colors;
+    } debug_aabb;
+
+    bool debug_nodes_aabb_enabled = false;
 
     void _enter_world();
+    void _exit_world();
+    void _update_visibility();
+    void _update_transform();
 
-    void _setup();
+    _FORCE_INLINE_ void _set_update_distance_tolerance_squared();
+    void _set_lod_levels() const;
+
     void _set_viewport_camera();
     void _update_viewer();
-    void _update_view();
-    void _check_mesh_render_resolution();
+    void _update_chunks();
+    void _create_mesh();
+    void _debug_nodes_aabb_create();
+	void _debug_nodes_aabb_free();
+    void _debug_nodes_aabb_draw() const;
 
 protected:
     void _notification(int p_what);
@@ -61,27 +83,24 @@ public:
 
     void set_chunk_size(int p_size);
     int get_chunk_size() const;
-    void set_chunk_world_offset(Vector2i p_offset);
-    Vector2i get_chunk_world_offset() const;
-    void set_centered(bool p_centered);
-    bool is_centered() const;
-    void set_unit_size(real_t p_size);
-    real_t get_unit_size() const;
-    void set_chunk_manual_update(bool p_manual);
-    bool is_chunk_manual_update() const;
-    void set_chunk_active(Vector2i p_active);
-    Vector2i get_chunk_active() const;
+    void set_map_scale(const Vector3 &p_scale);
+    Vector3 get_map_scale() const;
+    void set_block_size(int p_size);
+    int get_block_size() const;
+    void set_world_blocks(const Vector2i &p_blocks);
+    Vector2i get_world_blocks() const;
+    void set_lod_detailed_chunks_radius(int p_radius);
+    int get_lod_detailed_chunks_radius() const;
+    void set_lod_distance_ratio(real_t p_ratio);
+    real_t get_lod_distance_ratio() const;
 
-    void set_mesh_quad_tree_leaf_size(int p_size);
-    int get_mesh_quad_tree_leaf_size() const;
-    void set_mesh_render_resolution_multiplier(int p_multiplier);
-    int get_mesh_render_resolution_multiplier() const;
-    void set_mesh_lod_level_count(int p_count);
-    int get_mesh_lod_level_count() const;
-    void set_mesh_lod_distance_ratio(real_t p_ratio);
-    real_t get_mesh_lod_distance_ratio() const;
-    void set_mesh_lod_detail_levels(int p_levels);
-    int get_mesh_lod_detail_levels() const;
+    void set_debug_nodes_aabb_enabled(bool p_enabled);
+    bool is_debug_nodes_aabb_enabled() const;
+
+    // void set_chunk_manual_update(bool p_manual);
+    // bool is_chunk_manual_update() const;
+    // void set_chunk_active(Vector2i p_active);
+    // Vector2i get_chunk_active() const;
 
 	TTerrain();
     ~TTerrain();
