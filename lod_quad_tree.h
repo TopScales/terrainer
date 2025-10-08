@@ -28,6 +28,7 @@ private:
     static const int TR_BIT = 1 << 5;
     static const int BL_BIT = 1 << 6;
     static const int BR_BIT = 1 << 7;
+    static constexpr real_t LOD0_RADIUS_FACTOR = 1.42;
 
     enum NodeSelectionResult {
 		RESULT_UNDEFINED,

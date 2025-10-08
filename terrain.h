@@ -46,6 +46,7 @@ private:
     Transform3D viewer_transform;
     Transform3D last_transform;
     Vector3 chunk_offset;
+    bool use_viewport_camera = true;
 
     struct DebugAABB {
         RID shader;
@@ -64,15 +65,17 @@ private:
     void _update_transform();
 
     _FORCE_INLINE_ void _set_update_distance_tolerance_squared();
-    void _set_lod_levels() const;
+    void _set_lod_levels();
 
     void _set_viewport_camera();
     void _update_viewer();
     void _update_chunks();
     void _create_mesh();
+
     void _debug_nodes_aabb_create();
 	void _debug_nodes_aabb_free();
     void _debug_nodes_aabb_draw() const;
+    void _debug_nodes_aabb_set_colors();
 
 protected:
     void _notification(int p_what);

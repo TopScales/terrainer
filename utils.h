@@ -71,18 +71,18 @@ static real_t t_aabb_min_distance_sqrd_from_point(const AABB &p_aabb, const Vect
 
 	if (p_point.y < p_aabb.position.y) {
 		real_t d = p_aabb.position.y - p_point.y;
-		distance_sqrd = d * d;
+		distance_sqrd += d * d;
 	} else if (p_point.y > end.y) {
 		real_t d = p_point.y - end.y;
-		distance_sqrd = d * d;
+		distance_sqrd += d * d;
 	}
 
 	if (p_point.z < p_aabb.position.z) {
 		real_t d = p_aabb.position.z - p_point.z;
-		distance_sqrd = d * d;
+		distance_sqrd += d * d;
 	} else if (p_point.z > end.z) {
 		real_t d = p_point.z - end.z;
-		distance_sqrd = d * d;
+		distance_sqrd += d * d;
 	}
 
 	return distance_sqrd;

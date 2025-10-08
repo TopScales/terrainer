@@ -17,7 +17,7 @@
 
 void TLODQuadTree::set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_radius, real_t p_morph_start_ratio) {
     int levels = 1;
-    real_t level_radius = p_lod_detailed_chunks_radius * info->chunk_size * MAX(info->map_scale.x, info->map_scale.z);
+    real_t level_radius = LOD0_RADIUS_FACTOR * p_lod_detailed_chunks_radius * info->chunk_size * MAX(info->map_scale.x, info->map_scale.z);
     real_t current_radius = level_radius;
 
     while (current_radius < p_far_view) {
@@ -72,7 +72,7 @@ void TLODQuadTree::select_nodes(const Vector3 &p_viewer_position, int p_stop_at_
     int16_t ix1 = -ix0 + info->root_nodes_count_x % 2;
     int16_t iz0 = -info->root_nodes_count_z / 2;
     int16_t iz1 = -iz0 + info->root_nodes_count_z % 2;
-    int top_lod = MAX(0, info->lod_levels - 1);
+    int top_lod = info->lod_levels - 1;
 
     for (int16_t iz = iz0; iz < iz1; ++iz) {
         for (int16_t ix = ix0; ix < ix1; ++ix) {
@@ -108,32 +108,6 @@ int TLODQuadTree::get_selected_node_lod(int p_index) const {
     return node.get_lod_level();
 }
 
-// void TLODQuadTree::_create_node(QTNode &p_node, int p_x, int p_z, int p_size, int p_level) {
-//     DEV_ASSERT(p_x >= 0 && p_x < 65535);
-//     DEV_ASSERT(p_z >= 0 && p_z < 65535);
-//     DEV_ASSERT(p_level >= 0 && p_level <= MAX_LOD_LEVELS);
-//     DEV_ASSERT(p_size >= 0 && p_size < 32768);
-//     p_node.x = (unsigned short)p_x;
-//     p_node.z = (unsigned short)p_z;
-//     p_node.level = (unsigned short)p_level;
-//     p_node.size = (unsigned short)p_size;
-
-//     p_node.sub_tl = nullptr;
-//     p_node.sub_tr = nullptr;
-//     p_node.sub_bl = nullptr;
-//     p_node.sub_br = nullptr;
-
-//     if (p_size == data.qt_leaf_node_size) {
-//         DEV_ASSERT(p_level == data.lod_level_count - 1);
-//         // Mark leaf node.
-//         p_node.level |= 0x8000;
-
-//         // Find min/max heights at this patch of terrain.
-//         int limit_x = MIN(data.raster_size.x, p_node.x + p_node.size + 1);
-//         int limit_z = MIN(data.raster_size.y, p_node.z + p_node.size + 1);
-//     }
-// }
-
 TLODQuadTree::NodeSelectionResult TLODQuadTree::_lod_select(const Vector3 &p_viewer_position, bool p_parent_inside_frustum, int16_t p_x, int16_t p_z, uint16_t p_size, int p_lod_level, int p_stop_at_lod_level) {
     uint16_t min_y = 0;
     uint16_t max_y = 1; // TODO: Get minmax from heightmap data.
@@ -146,7 +120,7 @@ TLODQuadTree::NodeSelectionResult TLODQuadTree::_lod_select(const Vector3 &p_vie
         return RESULT_OUT_OF_RANGE;
     }
 
-    IntersectType frustum_it = _aabb_intersects_frustum(box);
+    IntersectType frustum_it = p_parent_inside_frustum ? INSIDE : _aabb_intersects_frustum(box);
 
     if (frustum_it == OUTSIDE) {
         return RESULT_OUT_OF_FRUSTUM;

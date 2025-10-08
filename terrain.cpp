@@ -19,8 +19,12 @@ const real_t TTerrain::DEBUG_AABB_LOD0_MARGIN = 2.0;
 const real_t TTerrain::DEBUG_AABB_MARGIN_LOD_SCALE_FACTOR = 0.5;
 
 void TTerrain::set_camera(Camera3D *p_camera) {
-	camera = p_camera;
-	far_view = -1.0;
+	if (p_camera != camera) {
+		camera = p_camera;
+		far_view = -1.0;
+	}
+
+	use_viewport_camera = camera == nullptr;
 }
 
 void TTerrain::set_chunk_size(int p_size) {
@@ -267,24 +271,29 @@ void TTerrain::_set_update_distance_tolerance_squared() {
 	update_distance_tolerance_squared *= update_distance_tolerance_squared;
 }
 
-void TTerrain::_set_lod_levels() const {
+void TTerrain::_set_lod_levels() {
 	if (!camera) {
 		return;
 	}
 
 	quad_tree->set_lod_levels(camera->get_far(), lod_detailed_chunks_radius);
+
+	if (debug_nodes_aabb_enabled) {
+		_debug_nodes_aabb_set_colors();
+	}
 }
 
 void TTerrain::_set_viewport_camera() {
 	Viewport *viewport = get_viewport();
 
 	if (viewport) {
-		set_camera(viewport->get_camera_3d());
+		camera = viewport->get_camera_3d();
+		far_view = -1.0;
 	}
 }
 
 void TTerrain::_update_viewer() {
-	if (!Engine::get_singleton()->is_editor_hint()) {
+	if (!Engine::get_singleton()->is_editor_hint() && use_viewport_camera) {
 		Viewport *viewport = get_viewport();
 
 		if (viewport && viewport->get_camera_3d() != camera) {
@@ -588,16 +597,16 @@ render_mode unshaded, world_vertex_coords;
 
 uniform float width = 0.1;
 
-//varying vec3 color;
+varying vec3 color;
 
 void vertex() {
 	vec3 displacement = (2.0 * COLOR.xyz - 1.0) * width;
 	VERTEX += displacement;
-	//color = INSTANCE_CUSTOM.rgb;
+	color = INSTANCE_CUSTOM.rgb;
 }
 
 void fragment() {
-	ALBEDO = vec3(0.5);
+	ALBEDO = color;
 }
 )";
 	rs->shader_set_code(debug_aabb.shader, shader_code);
@@ -617,6 +626,7 @@ void fragment() {
 	}
 
 	rs->instance_geometry_set_cast_shadows_setting(debug_aabb.instance, RenderingServer::SHADOW_CASTING_SETTING_OFF);
+	_debug_nodes_aabb_set_colors();
 }
 
 void TTerrain::_debug_nodes_aabb_free() {
@@ -626,13 +636,14 @@ void TTerrain::_debug_nodes_aabb_free() {
 	rs->free(debug_aabb.mesh);
 	rs->free(debug_aabb.material);
 	rs->free(debug_aabb.shader);
+	debug_aabb.lod_colors.clear();
 	debug_nodes_aabb_enabled = false;
 }
 
 void TTerrain::_debug_nodes_aabb_draw() const {
 	RenderingServer *const rs = RenderingServer::get_singleton();
 	int num_nodes = quad_tree->get_selection_count();
-	rs->multimesh_allocate_data(debug_aabb.multimesh, num_nodes, RenderingServer::MULTIMESH_TRANSFORM_3D);
+	rs->multimesh_allocate_data(debug_aabb.multimesh, num_nodes, RenderingServer::MULTIMESH_TRANSFORM_3D, false, true);
 
 	for (int i = 0; i < num_nodes; ++i) {
 		int lod = quad_tree->get_selected_node_lod(i);
@@ -643,6 +654,20 @@ void TTerrain::_debug_nodes_aabb_draw() const {
 		Vector3 bz = Vector3(0, 0, node_aabb.size.z);
 		Transform3D xform = Transform3D(Basis(bx, by, bz), node_aabb.position - Vector3(0, margin, 0));
 		rs->multimesh_instance_set_transform(debug_aabb.multimesh, i, xform);
+		rs->multimesh_instance_set_custom_data(debug_aabb.multimesh, i, debug_aabb.lod_colors[lod]);
+	}
+}
+
+void TTerrain::_debug_nodes_aabb_set_colors() {
+	if (debug_aabb.lod_colors.size() == info.lod_levels) {
+		return;
+	}
+
+	debug_aabb.lod_colors.resize(info.lod_levels);
+
+	for (int i = 0; i < info.lod_levels; ++i) {
+		Color color = Color::from_hsv((real_t)i / (real_t)info.lod_levels, 0.7, 0.9);
+		debug_aabb.lod_colors.set(i, color);
 	}
 }
 
