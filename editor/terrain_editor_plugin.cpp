@@ -11,8 +11,9 @@
 
 #include "terrain_editor_plugin.h"
 
-#include "editor/plugins/editor_plugin.h"
-#include "scene/gui/box_container.h"
+#ifdef TERRAINER_GDEXTENSION
+#include <godot_cpp/classes/scene_tree.hpp>
+#endif // TERRAINER_GDEXTENSION
 
 EditorPlugin::AfterGUIInput TerrainEditor::forward_spatial_input_event(Camera3D *p_camera, const Ref<InputEvent> &p_event) {
 	// If the mouse is currently captured, we are most likely in freelook mode.
@@ -239,7 +240,12 @@ void TerrainEditor::_bind_methods() {
 
 // ******** TerrainEditorPlugin ********
 
+#ifdef TERRAINER_MODULE
 EditorPlugin::AfterGUIInput TerrainEditorPlugin::forward_3d_gui_input(Camera3D *p_camera, const Ref<InputEvent> &p_event) {
+#endif // TERRAINER_MODULE
+#ifdef TERRAINER_GDEXTENSION
+int32_t TerrainEditorPlugin::_forward_3d_gui_input(Camera3D *p_camera, const Ref<InputEvent> &p_event) {
+#endif // TERRAINER_GDEXTENSION
 	for (TTerrain *terrain : nodes) {
 		terrain->set_camera(p_camera);
 	}
@@ -247,75 +253,52 @@ EditorPlugin::AfterGUIInput TerrainEditorPlugin::forward_3d_gui_input(Camera3D *
 	return terrain_editor->forward_spatial_input_event(p_camera, p_event);
 }
 
+#ifdef TERRAINER_MODULE
 void TerrainEditorPlugin::edit(Object *p_object) {
+#endif // TERRAINER_MODULE
+#ifdef TERRAINER_GDEXTENSION
+void TerrainEditorPlugin::_edit(Object *p_object) {
+#endif // TERRAINER_GDEXTENSION
 	ERR_FAIL_NULL(terrain_editor);
 	terrain_editor->edit(Object::cast_to<TTerrain>(p_object));
 }
 
+#ifdef TERRAINER_MODULE
 bool TerrainEditorPlugin::handles(Object *p_object) const {
+#endif // TERRAINER_MODULE
+#ifdef TERRAINER_GDEXTENSION
+bool TerrainEditorPlugin::_handles(Object *p_object) const {
+#endif // TERRAINER_GDEXTENSION
 	return p_object->is_class("TTerrain");
 }
 
+#ifdef TERRAINER_MODULE
 void TerrainEditorPlugin::make_visible(bool p_visible) {
+#endif // TERRAINER_MODULE
+#ifdef TERRAINER_GDEXTENSION
+void TerrainEditorPlugin::_make_visible(bool p_visible) {
+#endif // TERRAINER_GDEXTENSION
 	ERR_FAIL_NULL(terrain_editor);
-	// if (p_visible) {
-	// 	BaseButton *button = grid_map_editor->mode_buttons_group->get_pressed_button();
-	// 	if (button == nullptr) {
-	// 		grid_map_editor->select_mode_button->set_pressed(true);
-	// 	}
-	// 	grid_map_editor->_on_tool_mode_changed();
-	// 	panel_button->show();
-	// 	EditorNode::get_bottom_panel()->make_item_visible(grid_map_editor);
-	// 	grid_map_editor->set_process(true);
-	// } else {
-	// 	grid_map_editor->_show_viewports_transform_gizmo(true);
-	// 	panel_button->hide();
-	// 	if (grid_map_editor->is_visible_in_tree()) {
-	// 		EditorNode::get_bottom_panel()->hide_bottom_panel();
-	// 	}
-	// 	grid_map_editor->set_process(false);
-	// }
 }
-
-// 	GridMap *get_current_grid_map() const;
-// 	void set_selection(const Vector3i &p_begin, const Vector3i &p_end);
-// 	void clear_selection();
-// 	AABB get_selection() const;
-// 	bool has_selection() const;
-// 	Array get_selected_cells() const;
-// 	void set_selected_palette_item(int p_item) const;
-// 	int get_selected_palette_item() const;
-// };
 
 void TerrainEditorPlugin::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE: {
 			set_input_event_forwarding_always_enabled();
 			terrain_editor = memnew(TerrainEditor);
-	// 		grid_map_editor->set_h_size_flags(Control::SIZE_EXPAND_FILL);
-	// 		grid_map_editor->set_v_size_flags(Control::SIZE_EXPAND_FILL);
-	// 		grid_map_editor->set_custom_minimum_size(Size2(0, 200) * EDSCALE);
 			terrain_editor->hide();
-
-			// panel_button = EditorNode::get_bottom_panel()->add_item(TTRC("Terrain"), terrain_editor, ED_SHORTCUT_AND_COMMAND("bottom_panels/toggle_terrain_bottom_panel", TTRC("Toggle Terrain Bottom Panel")));
-	// 		panel_button->hide();
 			get_tree()->connect("node_added", callable_mp(this, &TerrainEditorPlugin::_on_tree_node_added));
 		} break;
 		case NOTIFICATION_EXIT_TREE: {
-	// 		EditorNode::get_bottom_panel()->remove_item(grid_map_editor);
-			memdelete_notnull(terrain_editor);
+			if (terrain_editor) {
+				memdelete(terrain_editor);
+			}
+
 			terrain_editor = nullptr;
 			panel_button = nullptr;
 			get_tree()->disconnect("node_added", callable_mp(this, &TerrainEditorPlugin::_on_tree_node_added));
 		} break;
 	}
-
-	// case NOTIFICATION_ENTER_TREE: {
-	// 		get_tree()->connect("node_added", callable_mp(this, &TerrainEditor::_on_tree_node_added));
-	// 	} break;
-	// 	case NOTIFICATION_EXIT_TREE: {
-	// 		get_tree()->disconnect("node_added", callable_mp(this, &TerrainEditor::_on_tree_node_added));
-	// 	} break;
 }
 
 void TerrainEditorPlugin::_bind_methods() {

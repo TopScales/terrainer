@@ -1,5 +1,5 @@
 /**
- * register_types.h
+ * macros.h
  * =============================================================================
  * Copyright (c) 2025 Rafael Martínez Gordillo and the Terrainer contributors.
  *
@@ -9,20 +9,16 @@
  * =============================================================================
  */
 
-#ifndef TERRAINER_REGISTER_TYPES_H
-#define TERRAINER_REGISTER_TYPES_H
+#ifndef TERRAINER_MACROS_H
+#define TERRAINER_MACROS_H
 
 #ifdef TERRAINER_MODULE
-#include "modules/register_module_types.h"
+#define SERVER_FREE(server, rid) server->free(rid)
 #endif // TERRAINER_MODULE
 
 #ifdef TERRAINER_GDEXTENSION
-#include <godot_cpp/core/class_db.hpp>
-
-using namespace godot;
+#define SERVER_FREE(server, rid) server->free_rid(rid)
 #endif // TERRAINER_GDEXTENSION
 
-void initialize_terrainer_module(ModuleInitializationLevel p_level);
-void uninitialize_terrainer_module(ModuleInitializationLevel p_level);
 
-#endif // TERRAINER_REGISTER_TYPES_H
+#endif // TERRAINER_MACROS_H

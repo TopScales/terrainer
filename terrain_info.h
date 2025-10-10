@@ -12,7 +12,16 @@
 #ifndef TERRAINER_TERRAIN_INFO_H
 #define TERRAINER_TERRAIN_INFO_H
 
+#ifdef TERRAINER_MODULE
 #include "core/variant/variant.h"
+#endif // TERRAINER_MODULE
+
+#ifdef TERRAINER_GDEXTENSION
+#include <godot_cpp/variant/builtin_types.hpp>
+#include <godot_cpp/variant/typed_array.hpp>
+
+using namespace godot;
+#endif // TERRAINER_GDEXTENSION
 
 // class THeightmapStorage;
 
@@ -28,7 +37,11 @@ struct TTerrainInfo {
     real_t lod_distance_ratio = 2.0;
 
     bool include_all_nodes_in_range = false;
+#ifdef TERRAINER_MODULE
     Vector<Plane> frustum;
+#elif TERRAINER_GDEXTENSION
+    TypedArray<Plane> frustum;
+#endif
     uint16_t root_node_size = 16;
     uint16_t root_nodes_count_x = 4;
     uint16_t root_nodes_count_z = 4;

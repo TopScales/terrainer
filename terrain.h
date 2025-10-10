@@ -14,8 +14,17 @@
 
 #include "terrain_info.h"
 #include "lod_quad_tree.h"
+
+#ifdef TERRAINER_MODULE
 #include "scene/3d/node_3d.h"
 #include "scene/3d/camera_3d.h"
+#endif // TERRAINER_MODULE
+
+#ifdef TERRAINER_GDEXTENSION
+#include <godot_cpp/classes/camera3d.hpp>
+#include <godot_cpp/classes/node3d.hpp>
+#include <godot_cpp/classes/shader_material.hpp>
+#endif // TERRAINER_GDEXTENSION
 
 class TTerrain : public Node3D {
     GDCLASS(TTerrain, Node3D);
@@ -31,6 +40,7 @@ private:
     static const real_t DEBUG_AABB_MARGIN_LOD_SCALE_FACTOR;
 
     int lod_detailed_chunks_radius = 4;
+    Ref<ShaderMaterial> material;
 
     // bool chunk_manual_update = false;
     // Vector2i chunk_active;
@@ -45,8 +55,11 @@ private:
     real_t update_distance_tolerance_squared = 1.0;
     Transform3D viewer_transform;
     Transform3D last_transform;
-    Vector3 chunk_offset;
     bool use_viewport_camera = true;
+    bool inside_world = false;
+
+    RID mm_chunks;
+    RID mm_instance;
 
     struct DebugAABB {
         RID shader;
@@ -92,10 +105,16 @@ public:
     int get_block_size() const;
     void set_world_blocks(const Vector2i &p_blocks);
     Vector2i get_world_blocks() const;
+    void set_material(const Ref<ShaderMaterial> &p_material);
+    Ref<ShaderMaterial> get_material() const;
     void set_lod_detailed_chunks_radius(int p_radius);
     int get_lod_detailed_chunks_radius() const;
     void set_lod_distance_ratio(real_t p_ratio);
     real_t get_lod_distance_ratio() const;
+
+    int info_get_lod_levels() const;
+    int info_get_lod_nodes_count(int p_level) const;
+    int info_get_selected_nodes_count() const;
 
     void set_debug_nodes_aabb_enabled(bool p_enabled);
     bool is_debug_nodes_aabb_enabled() const;

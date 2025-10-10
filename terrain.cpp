@@ -11,8 +11,20 @@
 
 #include "terrain.h"
 
+#include "utils/macros.h"
+#include "utils/math.h"
+
+#ifdef TERRAINER_MODULE
 #include "scene/main/viewport.h"
-#include "utils.h"
+#endif // TERRAINER_MODULE
+
+#ifdef TERRAINER_GDEXTENSION
+#include <godot_cpp/classes/engine.hpp>
+#include <godot_cpp/classes/mesh.hpp>
+#include <godot_cpp/classes/rendering_server.hpp>
+#include <godot_cpp/classes/viewport.hpp>
+#include <godot_cpp/classes/world3d.hpp>
+#endif // TERRAINER_GDEXTENSION
 
 const real_t TTerrain::UPDATE_TOLERANCE_FACTOR = 0.05;
 const real_t TTerrain::DEBUG_AABB_LOD0_MARGIN = 2.0;
@@ -36,11 +48,15 @@ void TTerrain::set_chunk_size(int p_size) {
 		info.chunk_size = size;
 		_set_update_distance_tolerance_squared();
 
-		if (is_inside_world()) {
+		if (inside_world) {
 			_create_mesh();
 		} else {
 			mesh_valid = false;
 		}
+	}
+
+	if (material.is_valid()) {
+		material->set_shader_parameter("grid_const", Vector2(0.5 * (real_t)info.chunk_size, 2.0 / (real_t)info.chunk_size));
 	}
 }
 
@@ -49,7 +65,7 @@ int TTerrain::get_chunk_size() const {
 }
 
 void TTerrain::set_map_scale(const Vector3 &p_scale) {
-	ERR_FAIL_COND_EDMSG(p_scale.x > 0.0 && p_scale.y > 0.0 && p_scale.z > 0.0, "Scale must be positive.");
+	ERR_FAIL_COND_EDMSG(p_scale.x <= 0.0 || p_scale.y <= 0.0 || p_scale.z <= 0.0, "Scale must be positive.");
 	info.map_scale = p_scale;
 	_set_update_distance_tolerance_squared();
 	dirty = true;
@@ -85,6 +101,22 @@ Vector2i TTerrain::get_world_blocks() const {
 	return info.world_blocks;
 }
 
+void TTerrain::set_material(const Ref<ShaderMaterial> &p_material) {
+	material = p_material;
+
+	if (mesh_valid) {
+		RenderingServer::get_singleton()->mesh_surface_set_material(mesh, 0, material->get_rid());
+	}
+
+	if (material.is_valid()) {
+		material->set_shader_parameter("grid_const", Vector2(0.5 * (real_t)info.chunk_size, 2.0 / (real_t)info.chunk_size));
+	}
+}
+
+Ref<ShaderMaterial> TTerrain::get_material() const {
+	return material;
+}
+
 void TTerrain::set_lod_detailed_chunks_radius(int p_radius) {
 	lod_detailed_chunks_radius = p_radius;
 	_set_lod_levels();
@@ -102,6 +134,18 @@ void TTerrain::set_lod_distance_ratio(real_t p_ratio) {
 
 real_t TTerrain::get_lod_distance_ratio() const {
 	return info.lod_distance_ratio;
+}
+
+int TTerrain::info_get_lod_levels() const {
+	return info.lod_levels;
+}
+
+int TTerrain::info_get_lod_nodes_count(int p_level) const {
+	return quad_tree->get_lod_nodes_count(p_level);
+}
+
+int TTerrain::info_get_selected_nodes_count() const {
+	return quad_tree->get_selection_count();
 }
 
 void TTerrain::set_debug_nodes_aabb_enabled(bool p_enabled) {
@@ -143,9 +187,11 @@ void TTerrain::_notification(int p_what) {
 		case NOTIFICATION_ENTER_WORLD: {
 			last_transform = get_global_transform();
 			_enter_world();
+			inside_world = true;
 		} break;
 		case NOTIFICATION_EXIT_WORLD: {
 			_exit_world();
+			inside_world = false;
 		} break;
 		case NOTIFICATION_ENTER_TREE: {
             _update_visibility();
@@ -184,10 +230,16 @@ void TTerrain::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_block_size"), &TTerrain::get_block_size);
 	ClassDB::bind_method(D_METHOD("set_world_blocks", "size"), &TTerrain::set_world_blocks);
 	ClassDB::bind_method(D_METHOD("get_world_blocks"), &TTerrain::get_world_blocks);
+	ClassDB::bind_method(D_METHOD("set_material", "material"), &TTerrain::set_material);
+	ClassDB::bind_method(D_METHOD("get_material"), &TTerrain::get_material);
 	ClassDB::bind_method(D_METHOD("set_lod_detailed_chunks_radius", "radius"), &TTerrain::set_lod_detailed_chunks_radius);
 	ClassDB::bind_method(D_METHOD("get_lod_detailed_chunks_radius"), &TTerrain::get_lod_detailed_chunks_radius);
 	ClassDB::bind_method(D_METHOD("set_lod_distance_ratio", "ratio"), &TTerrain::set_lod_distance_ratio);
 	ClassDB::bind_method(D_METHOD("get_lod_distance_ratio"), &TTerrain::get_lod_distance_ratio);
+
+	ClassDB::bind_method(D_METHOD("info_get_lod_levels"), &TTerrain::info_get_lod_levels);
+	ClassDB::bind_method(D_METHOD("info_get_lod_nodes_count", "level"), &TTerrain::info_get_lod_nodes_count);
+	ClassDB::bind_method(D_METHOD("info_get_selected_nodes_count"), &TTerrain::info_get_selected_nodes_count);
 
 	ClassDB::bind_method(D_METHOD("set_debug_nodes_aabb_enabled", "enabled"), &TTerrain::set_debug_nodes_aabb_enabled);
 	ClassDB::bind_method(D_METHOD("is_debug_nodes_aabb_enabled"), &TTerrain::is_debug_nodes_aabb_enabled);
@@ -201,6 +253,7 @@ void TTerrain::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "map_scale"), "set_map_scale", "get_map_scale");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "block_size", PROPERTY_HINT_RANGE, vformat("1,%d", MAX_CHUNK_SIZE)), "set_block_size", "get_block_size");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "world_blocks"), "set_world_blocks", "get_world_blocks");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "material", PROPERTY_HINT_RESOURCE_TYPE, "ShaderMaterial"), "set_material", "get_material");
 
 	ADD_GROUP("LOD", "lod_");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "lod_detailed_chunks_radius", PROPERTY_HINT_RANGE, "2,16"), "set_lod_detailed_chunks_radius", "get_lod_detailed_chunks_radius");
@@ -214,20 +267,6 @@ void TTerrain::_bind_methods() {
 }
 
 void TTerrain::_enter_world() {
-	// for (const KeyValue<GridKey, Section *> &kv : section_map) {
-	// 	Section *const section = kv.value;
-	// 	if (section->status & SECTION_STATUS_INSTANCED) {
-	// 		const Vector3 offset = _section_key_to_local(kv.key - section_world_offset);
-	// 		const Transform3D xform = get_global_transform().translated(offset);
-	// 		if (section->status & SECTION_STATUS_PHYSICS_ACTIVE) {
-	// 			_section_physics_enter_world(section, xform);
-	// 		}
-	// 		if (section->status & SECTION_STATUS_RENDER_ACTIVE) {
-	// 			_section_render_enter_world(section, xform);
-	// 		}
-	// 	}
-	// }
-
 	if (!Engine::get_singleton()->is_editor_hint()) {
 		_set_viewport_camera();
 	}
@@ -236,21 +275,30 @@ void TTerrain::_enter_world() {
 		_create_mesh();
 	}
 
+	Transform3D xform = get_global_transform();
+	RID scenario = get_world_3d()->get_scenario();
+	RenderingServer *const rs = RenderingServer::get_singleton();
+	rs->instance_set_scenario(mm_instance, scenario);
+	rs->instance_set_transform(mm_instance, xform);
+
 	if (debug_nodes_aabb_enabled) {
-		RenderingServer *const rs = RenderingServer::get_singleton();
-		rs->instance_set_scenario(debug_aabb.instance, get_world_3d()->get_scenario());
-		rs->instance_set_transform(debug_aabb.instance, get_global_transform());
+		rs->instance_set_scenario(debug_aabb.instance, scenario);
+		rs->instance_set_transform(debug_aabb.instance, xform);
 	}
 }
 
 void TTerrain::_exit_world() {
+	RenderingServer *const rs = RenderingServer::get_singleton();
+	rs->instance_set_scenario(mm_instance, RID());
+
 	if (debug_nodes_aabb_enabled) {
-		RenderingServer::get_singleton()->instance_set_scenario(debug_aabb.instance, RID());
+		rs->instance_set_scenario(debug_aabb.instance, RID());
 	}
 }
 
 void TTerrain::_update_visibility() {
 	RenderingServer *const rs = RenderingServer::get_singleton();
+	rs->instance_set_visible(mm_instance, is_visible_in_tree());
 
 	if (debug_nodes_aabb_enabled) {
 		rs->instance_set_visible(debug_aabb.instance, is_visible_in_tree());
@@ -258,10 +306,12 @@ void TTerrain::_update_visibility() {
 }
 
 void TTerrain::_update_transform() {
+	Transform3D xform = get_global_transform();
 	RenderingServer *const rs = RenderingServer::get_singleton();
+	rs->instance_set_transform(mm_instance, xform);
 
 	if (debug_nodes_aabb_enabled) {
-		rs->instance_set_transform(debug_aabb.instance, get_global_transform());
+		rs->instance_set_transform(debug_aabb.instance, xform);
 	}
 }
 
@@ -277,6 +327,11 @@ void TTerrain::_set_lod_levels() {
 	}
 
 	quad_tree->set_lod_levels(camera->get_far(), lod_detailed_chunks_radius);
+
+	if (material.is_valid()) {
+		Ref<ImageTexture> morph_texture = quad_tree->get_morph_texture();
+		material->set_shader_parameter("morph_data", morph_texture);
+	}
 
 	if (debug_nodes_aabb_enabled) {
 		_debug_nodes_aabb_set_colors();
@@ -328,6 +383,28 @@ void TTerrain::_update_viewer() {
 
 void TTerrain::_update_chunks() {
 	quad_tree->select_nodes(viewer_transform.origin);
+	RenderingServer *const rs = RenderingServer::get_singleton();
+	rs->multimesh_allocate_data(mm_chunks, quad_tree->get_selection_count(), RenderingServer::MULTIMESH_TRANSFORM_3D, true);
+	int lod_half = (info.lod_levels + 1) / 2;
+
+	for (int i = 0; i < quad_tree->get_selection_count(); ++i) {
+		const TLODQuadTree::QTNode *node = quad_tree->get_selected_node(i);
+		const Vector3 bx = Vector3(node->size * info.map_scale.x, 0.0, 0.0);
+		const Vector3 by = Vector3(0.0, 1.0, 0.0);
+		const Vector3 bz = Vector3(0.0, 0.0, node->size * info.map_scale.z);
+		const Vector3 origin = Vector3(node->x * bx.x, node->min_y * info.map_scale.y, node->z * bz.z);
+		const Transform3D xform = Transform3D(Basis(bx, by, bz), origin);
+		rs->multimesh_instance_set_transform(mm_chunks, i, xform);
+		const int lod = node->get_lod_level();
+		int color_index = lod / 2 + lod_half * (lod % 2);
+		Color lod_color = Color::from_hsv((real_t)color_index / (real_t)info.lod_levels, 0.8, 0.9);
+		// const uint32_t flags = uint32_t(node->flags) << 24;
+		const uint32_t flags = uint32_t(node->flags) | (1 << 30);
+        float encoded_alpha;
+        std::memcpy(&encoded_alpha, &flags, sizeof(float));
+		Color color = Color(lod_color, encoded_alpha);
+		rs->multimesh_instance_set_color(mm_chunks, i, color);
+	}
 
 	if (debug_nodes_aabb_enabled) {
 		_debug_nodes_aabb_draw();
@@ -478,6 +555,11 @@ void TTerrain::_create_mesh() {
 	arrays[RenderingServer::ARRAY_VERTEX] = vertices;
 	arrays[RenderingServer::ARRAY_INDEX] = indices;
 	rs->mesh_add_surface_from_arrays(mesh, RenderingServer::PRIMITIVE_TRIANGLES, arrays);
+	mesh_valid = true;
+
+	if (material.is_valid()) {
+		rs->mesh_surface_set_material(mesh, 0, material->get_rid());
+	}
 }
 
 void TTerrain::_debug_nodes_aabb_create() {
@@ -616,7 +698,7 @@ void fragment() {
 	debug_aabb.multimesh = rs->multimesh_create();
 	rs->multimesh_set_mesh(debug_aabb.multimesh, debug_aabb.mesh);
 
-	if (is_inside_world()) {
+	if (inside_world) {
 		debug_aabb.instance = rs->instance_create2(debug_aabb.multimesh, get_world_3d()->get_scenario());
 		rs->instance_set_visible(debug_aabb.instance, is_visible_in_tree());
 		rs->instance_set_transform(debug_aabb.instance, get_global_transform());
@@ -631,11 +713,11 @@ void fragment() {
 
 void TTerrain::_debug_nodes_aabb_free() {
 	RenderingServer *const rs = RenderingServer::get_singleton();
-	rs->free(debug_aabb.instance);
-	rs->free(debug_aabb.multimesh);
-	rs->free(debug_aabb.mesh);
-	rs->free(debug_aabb.material);
-	rs->free(debug_aabb.shader);
+	SERVER_FREE(rs, debug_aabb.instance);
+	SERVER_FREE(rs, debug_aabb.multimesh);
+	SERVER_FREE(rs, debug_aabb.mesh);
+	SERVER_FREE(rs, debug_aabb.material);
+	SERVER_FREE(rs, debug_aabb.shader);
 	debug_aabb.lod_colors.clear();
 	debug_nodes_aabb_enabled = false;
 }
@@ -664,24 +746,34 @@ void TTerrain::_debug_nodes_aabb_set_colors() {
 	}
 
 	debug_aabb.lod_colors.resize(info.lod_levels);
+	int half = (info.lod_levels + 1) / 2;
 
 	for (int i = 0; i < info.lod_levels; ++i) {
-		Color color = Color::from_hsv((real_t)i / (real_t)info.lod_levels, 0.7, 0.9);
+		int index = i / 2 + half * (i % 2);
+		Color color = Color::from_hsv((real_t)index / (real_t)info.lod_levels, 0.8, 0.9);
 		debug_aabb.lod_colors.set(i, color);
 	}
 }
 
 TTerrain::TTerrain() {
+	RenderingServer *const rs = RenderingServer::get_singleton();
+	mesh = rs->mesh_create();
+	mm_chunks = rs->multimesh_create();
+	rs->multimesh_set_mesh(mm_chunks, mesh);
+	mm_instance = rs->instance_create();
+	rs->instance_set_base(mm_instance, mm_chunks);
 	set_notify_transform(true);
 	_set_update_distance_tolerance_squared();
-	mesh = RenderingServer::get_singleton()->mesh_create();
 	set_process(true);
 	quad_tree.instantiate();
 	quad_tree->set_info(&info);
 }
 
 TTerrain::~TTerrain() {
-	RenderingServer::get_singleton()->free(mesh);
+	RenderingServer *const rs = RenderingServer::get_singleton();
+	SERVER_FREE(rs, mm_instance);
+	SERVER_FREE(rs, mm_chunks);
+	SERVER_FREE(rs, mesh);
 
 	if (debug_nodes_aabb_enabled) {
 		_debug_nodes_aabb_free();

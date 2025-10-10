@@ -10,12 +10,12 @@
  */
 
 #include "lod_quad_tree.h"
-#include "utils.h"
-// #include "heightmap_storage.h"
 
-// const real_t TLODQuadTree::MORPH_START_RATIO = 0.66;
+#include "utils/math.h"
 
-void TLODQuadTree::set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_radius, real_t p_morph_start_ratio) {
+#include "utils/compat_marshalls.h"
+
+void TLODQuadTree::set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_radius) {
     int levels = 1;
     real_t level_radius = LOD0_RADIUS_FACTOR * p_lod_detailed_chunks_radius * info->chunk_size * MAX(info->map_scale.x, info->map_scale.z);
     real_t current_radius = level_radius;
@@ -43,27 +43,17 @@ void TLODQuadTree::set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_r
     lod_visibility_range.set(levels - 1, p_far_view);
     info->lod_levels = levels;
     real_t m = p_far_view / current_radius;
+    info->root_node_size = info->chunk_size;
 
     for (int i = 0; i < levels - 1; ++i) {
         lod_visibility_range.set(i, lod_visibility_range[i] * m);
-    }
-
-    real_t prev_pos = 0.0;
-    selection_morph_end.resize(levels);
-    selection_morph_start.resize(levels);
-    info->root_node_size = info->chunk_size;
-
-    for (int i = 0; i < levels; ++i) {
-        real_t end = lod_visibility_range[i];
-        real_t start = prev_pos + (end - prev_pos) * p_morph_start_ratio;
-        selection_morph_end.set(i, end);
-        selection_morph_start.set(i, start);
-        prev_pos = start;
         info->root_node_size *= 2;
     }
 
+    info->root_node_size *= 2;
     info->root_nodes_count_x = MAX(1, info->world_blocks.x * info->block_size * info->chunk_size / info->root_node_size);
     info->root_nodes_count_z = MAX(1, info->world_blocks.y * info->block_size * info->chunk_size / info->root_node_size);
+    lods_count.resize(levels);
 }
 
 void TLODQuadTree::select_nodes(const Vector3 &p_viewer_position, int p_stop_at_lod_level) {
@@ -82,16 +72,24 @@ void TLODQuadTree::select_nodes(const Vector3 &p_viewer_position, int p_stop_at_
 
     info->min_selected_lod = MAX_LOD_LEVELS;
     info->max_selected_lod = 0;
+    lods_count.fill(0);
+    int *count_ptr = lods_count.ptrw();
 
     for (int i = 0; i < selection_count; ++i) {
         int selected_node_lod_level = selected_buffer[i].get_lod_level();
         info->min_selected_lod = MIN(info->min_selected_lod, selected_node_lod_level);
         info->max_selected_lod = MAX(info->max_selected_lod, selected_node_lod_level);
+        count_ptr[selected_node_lod_level]++;
     }
 }
 
 int TLODQuadTree::get_selection_count() const {
     return selection_count;
+}
+
+const TLODQuadTree::QTNode *TLODQuadTree::get_selected_node(int p_index) const {
+    ERR_FAIL_INDEX_V_EDMSG(p_index, selection_count, nullptr, "Selected node index out of bounds.");
+    return &selected_buffer[p_index];
 }
 
 AABB TLODQuadTree::get_selected_node_aabb(int p_index) const {
@@ -108,6 +106,33 @@ int TLODQuadTree::get_selected_node_lod(int p_index) const {
     return node.get_lod_level();
 }
 
+int TLODQuadTree::get_lod_nodes_count(int p_level) const {
+    ERR_FAIL_INDEX_V_EDMSG(p_level, lods_count.size(), 0, "Invalid LOD level index.");
+    return lods_count[p_level];
+}
+
+Ref<ImageTexture> TLODQuadTree::get_morph_texture(real_t p_morph_start_ratio) const {
+    PackedByteArray buffer;
+    buffer.resize(4 * info->lod_levels);
+    real_t prev_pos = 0.0;
+    uint8_t *w = buffer.ptrw();
+
+    for (int i = 0; i < info->lod_levels; ++i) {
+        float end = lod_visibility_range[i];
+        float start = prev_pos + (end - prev_pos) * p_morph_start_ratio;
+        float c1 = end / (end - start);
+        float c2 = 1.0f / (end - start);
+        int64_t index = 4 * i;
+		encode_uint16(MAKE_HALF_FLOAT(c1), &w[index]);
+        encode_uint16(MAKE_HALF_FLOAT(c2), &w[index + 2]);
+        prev_pos = end;
+    }
+
+    Ref<Image> image = Image::create_from_data(info->lod_levels, 1, false, Image::FORMAT_RGH, buffer);
+    Ref<ImageTexture> texture = ImageTexture::create_from_image(image);
+    return texture;
+}
+
 TLODQuadTree::NodeSelectionResult TLODQuadTree::_lod_select(const Vector3 &p_viewer_position, bool p_parent_inside_frustum, int16_t p_x, int16_t p_z, uint16_t p_size, int p_lod_level, int p_stop_at_lod_level) {
     uint16_t min_y = 0;
     uint16_t max_y = 1; // TODO: Get minmax from heightmap data.
@@ -116,14 +141,14 @@ TLODQuadTree::NodeSelectionResult TLODQuadTree::_lod_select(const Vector3 &p_vie
     AABB box = AABB(node_position, node_size);
     real_t distance_limit = lod_visibility_range[p_lod_level];
 
-    if (!t_aabb_intersects_sphere(box, p_viewer_position, distance_limit)) {
-        return RESULT_OUT_OF_RANGE;
-    }
-
     IntersectType frustum_it = p_parent_inside_frustum ? INSIDE : _aabb_intersects_frustum(box);
 
     if (frustum_it == OUTSIDE) {
         return RESULT_OUT_OF_FRUSTUM;
+    }
+
+    if (!t_aabb_intersects_sphere(box, p_viewer_position, distance_limit)) {
+        return RESULT_OUT_OF_RANGE;
     }
 
     NodeSelectionResult res_subnode_tl = RESULT_UNDEFINED;
@@ -168,30 +193,37 @@ TLODQuadTree::NodeSelectionResult TLODQuadTree::_lod_select(const Vector3 &p_vie
         selected_buffer[selection_count] = QTNode(p_x, p_z, p_size, min_y, max_y, p_lod_level, !remove_subnode_tl, !remove_subnode_tr, !remove_subnode_bl, !remove_subnode_br);
         selection_count++;
         return RESULT_SELECTED;
-        // TODO: Check if morph range is too large.
     }
 
-    ERR_FAIL_COND_V_EDMSG(!(subnode_tl_sel || subnode_tr_sel || subnode_bl_sel || subnode_br_sel), RESULT_OUT_OF_FRUSTUM, "Node is inside frustum, but none of its childs is.");
-    return RESULT_SELECTED; // At least one child should have been selected.
+    if (subnode_tl_sel || subnode_tr_sel || subnode_bl_sel || subnode_br_sel) {
+        return RESULT_SELECTED; // At least one child has been selected.
+    } else {
+        return RESULT_OUT_OF_FRUSTUM;
+    }
 }
 
 TLODQuadTree::IntersectType TLODQuadTree::_aabb_intersects_frustum(const AABB &p_aabb) const {
     int in = 0;
-    for (int i = 0; i < 8; ++i) {
-        bool inside = true;
-        for (int j = 0; j < info->frustum.size(); j++) {
-            if (info->frustum[j].is_point_over(p_aabb.get_endpoint(i))) {
-                inside = false;
-                break;
+
+    for (int iplane = 0; iplane < info->frustum.size(); ++iplane) {
+        int out = 0;
+
+        for (int icorner = 0; icorner < 8; ++icorner) {
+            Plane plane = info->frustum[iplane];
+
+            if (plane.is_point_over(p_aabb.get_endpoint(icorner))) {
+                out++;
             }
         }
 
-        if (inside) {
+        if (out == 8) {
+            return OUTSIDE;
+        } else if (out == 0) {
             in++;
         }
     }
 
-    return in == 8 ? INSIDE : (in == 0 ? OUTSIDE : INTERSECTS);
+    return in == info->frustum.size() ? INSIDE : INTERSECTS;
 }
 
 TLODQuadTree::TLODQuadTree() {
