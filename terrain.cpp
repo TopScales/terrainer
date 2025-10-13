@@ -767,6 +767,14 @@ TTerrain::TTerrain() {
 	set_process(true);
 	quad_tree.instantiate();
 	quad_tree->set_info(&info);
+
+// 	include.instantiate();
+// 	const String include_code = R"(
+// float LOD = 1.0;
+// )";
+// 	include->set_code(include_code);
+// 	include->set_path("res://TERRAIN", true);
+// 	print_line(vformat("Include created. %s", include->to_string()));
 }
 
 TTerrain::~TTerrain() {

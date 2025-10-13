@@ -71,6 +71,7 @@ private:
     } debug_aabb;
 
     bool debug_nodes_aabb_enabled = false;
+    Ref<ShaderInclude> include;
 
     void _enter_world();
     void _exit_world();

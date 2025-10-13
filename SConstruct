@@ -2,6 +2,7 @@
 import os
 import sys
 
+GODOT_BINDINGS = os.getenv("GODOT_BINDINGS", "godot-cpp/SConstruct")
 env = SConscript("../../godot-cpp/SConstruct")
 
 # For reference:
@@ -16,10 +17,11 @@ env = SConscript("../../godot-cpp/SConstruct")
 env.Append(CPPPATH=["./"])
 env.Append(CPPDEFINES=["TERRAINER_GDEXTENSION"])
 sources = Glob("./*.cpp")
+BIN_OUTPUT = os.getenv("BIN_OUTPUT", "./demo/bin")
 
 if env["platform"] == "macos":
     library = env.SharedLibrary(
-        "demo/bin/libgdexample.{}.{}.framework/libgdexample.{}.{}".format(
+        BIN_OUTPUT + "/libterrainer.{}.{}.framework/libterrainer.{}.{}".format(
             env["platform"], env["target"], env["platform"], env["target"]
         ),
         source=sources,
@@ -27,17 +29,17 @@ if env["platform"] == "macos":
 elif env["platform"] == "ios":
     if env["ios_simulator"]:
         library = env.StaticLibrary(
-            "demo/bin/libgdexample.{}.{}.simulator.a".format(env["platform"], env["target"]),
+            BIN_OUTPUT + "/libterrainer.{}.{}.simulator.a".format(env["platform"], env["target"]),
             source=sources,
         )
     else:
         library = env.StaticLibrary(
-            "demo/bin/libgdexample.{}.{}.a".format(env["platform"], env["target"]),
+            BIN_OUTPUT + "/libterrainer.{}.{}.a".format(env["platform"], env["target"]),
             source=sources,
         )
 else:
     library = env.SharedLibrary(
-        "demo/bin/libgdexample{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
+        BIN_OUTPUT + "/libterrainer{}{}".format(env["suffix"], env["SHLIBSUFFIX"]),
         source=sources,
     )
 
