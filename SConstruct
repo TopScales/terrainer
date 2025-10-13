@@ -3,7 +3,7 @@ import os
 import sys
 
 GODOT_BINDINGS = os.getenv("GODOT_BINDINGS", "godot-cpp/SConstruct")
-env = SConscript("../../godot-cpp/SConstruct")
+env = SConscript(GODOT_BINDINGS + "/SConstruct")
 
 # For reference:
 # - CCFLAGS are compilation flags shared between C and C++
