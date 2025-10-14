@@ -37,6 +37,7 @@ void initialize_terrainer_module(ModuleInitializationLevel p_level) {
 	}
 #ifdef TOOLS_ENABLED
 	if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
+		GDREGISTER_CLASS(TerrainEditor);
 		GDREGISTER_CLASS(TerrainEditorPlugin);
 		EditorPlugins::add_by_type<TerrainEditorPlugin>();
 	}

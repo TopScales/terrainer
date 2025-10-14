@@ -15,7 +15,6 @@
 #include "terrain_info.h"
 
 #ifdef TERRAINER_MODULE
-#include "core/object/ref_counted.h"
 #include "scene/3d/camera_3d.h"
 #include "scene/resources/image_texture.h"
 #endif // TERRAINER_MODULE
@@ -26,8 +25,7 @@
 
 #define DEFAULT_MORPH_START_RATIO  (0.66)
 
-class TLODQuadTree : public RefCounted{
-    GDCLASS(TLODQuadTree, RefCounted);
+class TLODQuadTree {
 
 public:
     struct QTNode {

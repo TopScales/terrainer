@@ -21,6 +21,7 @@
 
 #ifdef TERRAINER_GDEXTENSION
 #include <godot_cpp/classes/editor_plugin.hpp>
+#include <godot_cpp/classes/input_event.hpp>
 #include <godot_cpp/classes/v_box_container.hpp>
 #endif // TERRAINER_GDEXTENSION
 

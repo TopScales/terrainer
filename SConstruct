@@ -17,6 +17,10 @@ env = SConscript(GODOT_BINDINGS + "/SConstruct")
 env.Append(CPPPATH=["./"])
 env.Append(CPPDEFINES=["TERRAINER_GDEXTENSION"])
 sources = Glob("./*.cpp")
+
+if env["target"] == "editor":
+    sources.append(Glob("./editor/*.cpp"))
+
 BIN_OUTPUT = os.getenv("BIN_OUTPUT", "./demo/bin")
 
 if env["platform"] == "macos":

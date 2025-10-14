@@ -48,7 +48,7 @@ private:
     TTerrainInfo info;
     RID mesh;
     Camera3D *camera = nullptr;
-    Ref<TLODQuadTree> quad_tree;
+    TLODQuadTree *quad_tree;
     real_t far_view = 0.0;
     bool dirty = false;
     bool mesh_valid = false;

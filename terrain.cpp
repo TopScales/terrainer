@@ -462,6 +462,7 @@ void TTerrain::_create_mesh() {
 
 			tri_a = !tri_a;
 		}
+		tri_a = !tri_a;
 	}
 
 	// Top right.
@@ -490,6 +491,7 @@ void TTerrain::_create_mesh() {
 
 			tri_a = !tri_a;
 		}
+		tri_a = !tri_a;
 	}
 
 	// Bottom left.
@@ -518,6 +520,7 @@ void TTerrain::_create_mesh() {
 
 			tri_a = !tri_a;
 		}
+		tri_a = !tri_a;
 	}
 
 	// Bottom right.
@@ -546,6 +549,7 @@ void TTerrain::_create_mesh() {
 
 			tri_a = !tri_a;
 		}
+		tri_a = !tri_a;
 	}
 
 	RenderingServer *const rs = RenderingServer::get_singleton();
@@ -765,7 +769,7 @@ TTerrain::TTerrain() {
 	set_notify_transform(true);
 	_set_update_distance_tolerance_squared();
 	set_process(true);
-	quad_tree.instantiate();
+	quad_tree = memnew(TLODQuadTree);
 	quad_tree->set_info(&info);
 
 // 	include.instantiate();
@@ -782,6 +786,7 @@ TTerrain::~TTerrain() {
 	SERVER_FREE(rs, mm_instance);
 	SERVER_FREE(rs, mm_chunks);
 	SERVER_FREE(rs, mesh);
+	memdelete(quad_tree);
 
 	if (debug_nodes_aabb_enabled) {
 		_debug_nodes_aabb_free();
