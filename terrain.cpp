@@ -47,6 +47,8 @@ void TTerrain::set_chunk_size(int p_size) {
 	if (size != info.chunk_size) {
 		info.chunk_size = size;
 		_set_update_distance_tolerance_squared();
+		_set_lod_levels();
+		dirty = true;
 
 		if (inside_world) {
 			_create_mesh();
@@ -58,6 +60,7 @@ void TTerrain::set_chunk_size(int p_size) {
 	if (material.is_valid()) {
 		material->set_shader_parameter("grid_const", Vector2(0.5 * (real_t)info.chunk_size, 2.0 / (real_t)info.chunk_size));
 	}
+
 }
 
 int TTerrain::get_chunk_size() const {

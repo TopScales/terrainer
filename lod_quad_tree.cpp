@@ -50,7 +50,6 @@ void TLODQuadTree::set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_r
         info->root_node_size *= 2;
     }
 
-    info->root_node_size *= 2;
     info->root_nodes_count_x = MAX(1, info->world_blocks.x * info->block_size * info->chunk_size / info->root_node_size);
     info->root_nodes_count_z = MAX(1, info->world_blocks.y * info->block_size * info->chunk_size / info->root_node_size);
     lods_count.resize(levels);

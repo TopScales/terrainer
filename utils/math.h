@@ -102,9 +102,7 @@ inline bool t_aabb_intersects_sphere(const AABB &p_aabb, const Vector3 &p_center
 
 #ifdef TERRAINER_MODULE
 #define MAKE_HALF_FLOAT(v) Math::make_half_float(v)
-#endif // TERRAINER_MODULE
-
-#ifdef TERRAINER_GDEXTENSION
+#elif TERRAINER_GDEXTENSION
 _ALWAYS_INLINE_ uint16_t make_half_float(float p_value) {
 	union {
 		float fv;
@@ -154,6 +152,6 @@ _ALWAYS_INLINE_ uint16_t make_half_float(float p_value) {
 }
 
 #define MAKE_HALF_FLOAT(v) make_half_float(v)
-#endif // TERRAINER_GDEXTENSION
+#endif
 
 #endif // TERRAINER_MATH_H
