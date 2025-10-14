@@ -3,6 +3,7 @@ import os
 import sys
 
 GODOT_BINDINGS = os.getenv("GODOT_BINDINGS", "godot-cpp/SConstruct")
+GODOT_BINDINGS = ARGUMENTS.get('GODOT_BINDINGS', GODOT_BINDINGS)
 env = SConscript(GODOT_BINDINGS + "/SConstruct")
 
 # For reference:
@@ -22,6 +23,7 @@ if env["target"] == "editor":
     sources.append(Glob("./editor/*.cpp"))
 
 BIN_OUTPUT = os.getenv("BIN_OUTPUT", "./demo/bin")
+BIN_OUTPUT = ARGUMENTS.get('BIN_OUTPUT', BIN_OUTPUT)
 
 if env["platform"] == "macos":
     library = env.SharedLibrary(
