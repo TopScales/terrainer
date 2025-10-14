@@ -54,7 +54,7 @@ cd <my-modules>
 git clone https://github.com/TopScales/terrainer_demo
 ```
 
-3. [Compile Godot](https://docs.godotengine.org/en/stable/engine_details/development/compiling/index.html) as usual providing the `custom_modules` option.
+3. [Compile Godot](https://docs.godotengine.org/en/stable/engine_details/development/compiling/index.html) as usual, providing the `custom_modules` option.
 
 ```shell
 scons custom_modules=<my-modules>
