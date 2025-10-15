@@ -26,7 +26,9 @@ void TLODQuadTree::set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_r
         levels++;
     }
 
-    if (current_radius <= 2.0 * p_far_view) {
+    real_t debug_rad = current_radius;
+
+    if (current_radius <= 2.0 * p_far_view && levels > 1) {
         levels -= (int)Math::round((current_radius - p_far_view) / p_far_view); // Try to better fit number of levels to far view distance.
     }
 
@@ -40,6 +42,7 @@ void TLODQuadTree::set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_r
         current_radius += level_radius;
     }
 
+
     lod_visibility_range.set(levels - 1, p_far_view);
     info->lod_levels = levels;
     real_t m = p_far_view / current_radius;
@@ -50,6 +53,8 @@ void TLODQuadTree::set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_r
         info->root_node_size *= 2;
     }
 
+    level_radius = LOD0_RADIUS_FACTOR * p_lod_detailed_chunks_radius * info->chunk_size * MAX(info->map_scale.x, info->map_scale.z);
+    print_line(vformat("R0: %.3f (%.3f)  TotR: %.3f  Far: %.3f", lod_visibility_range[0], level_radius, debug_rad, p_far_view));
     info->root_nodes_count_x = MAX(1, info->world_blocks.x * info->block_size * info->chunk_size / info->root_node_size);
     info->root_nodes_count_z = MAX(1, info->world_blocks.y * info->block_size * info->chunk_size / info->root_node_size);
     lods_count.resize(levels);

@@ -48,7 +48,6 @@ void TTerrain::set_chunk_size(int p_size) {
 		info.chunk_size = size;
 		_set_update_distance_tolerance_squared();
 		_set_lod_levels();
-		dirty = true;
 
 		if (inside_world) {
 			_create_mesh();
@@ -330,6 +329,7 @@ void TTerrain::_set_lod_levels() {
 	}
 
 	quad_tree->set_lod_levels(camera->get_far(), lod_detailed_chunks_radius);
+	dirty = true;
 
 	if (material.is_valid()) {
 		Ref<ImageTexture> morph_texture = quad_tree->get_morph_texture();
@@ -367,7 +367,6 @@ void TTerrain::_update_viewer() {
 	if (camera->get_far() != far_view) {
 		_set_lod_levels();
 		far_view = camera->get_far();
-		dirty = true;
 	}
 
 	if (dirty) {

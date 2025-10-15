@@ -13,6 +13,7 @@
 
 #include "register_types.h"
 
+#include "storage_stream/storage_stream.h"
 #include "terrain.h"
 
 #ifdef TOOLS_ENABLED
@@ -34,6 +35,7 @@ using namespace godot;
 void initialize_terrainer_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE) {
 		GDREGISTER_CLASS(TTerrain);
+		GDREGISTER_CLASS(TStorageStream);
 	}
 #ifdef TOOLS_ENABLED
 	if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {

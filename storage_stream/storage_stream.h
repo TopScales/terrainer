@@ -13,40 +13,45 @@
 #define TERRAINER_STORAGE_STREAM_H
 
 #include "core/io/file_access.h"
-#include "core/io/dir_access.h"
+#include "core/io/resource.h"
 
-class TStorageStream : public RefCounted {
-    GDCLASS(TStorageStream, RefCounted);
+class TStorageStream : public Resource {
+    GDCLASS(TStorageStream, Resource);
 
 protected:
     static const uint32_t FORMAT_VERSION = 1;
 
     struct Block {
+        uint8_t version;
+        uint8_t gaps;
         Ref<FileAccess> file;
+
+        Block(Ref<FileAccess> p_file, uint8_t p_version, uint8_t p_gaps) : file(p_file), version(p_version), gaps(p_gaps) {}
     };
 
-    Ref<FileAccess> desc;
-    HashMap<Vector2i, Block *> blocks;
-    uint32_t version = 0;
-    int block_size = 128;
-    int chunk_size = 32;
-
-    _FORCE_INLINE_ const Block *_get_block(int x, int z) const;
-
 private:
-    static const String MAIN_FILE_EXT;
-    static const String DATA_FILE_EXT;
+    int block_size = 32;
+    bool directory_use_custom = false;
+    String directory_path;
+    HashMap<Vector2i, Block *> blocks;
 
-    void _clear_blocks();
-    virtual Block *_create_block(Ref<FileAccess> p_file) const;
-    _FORCE_INLINE_ Vector2i _get_block_id(int p_x, int p_z) const;
+    // _FORCE_INLINE_ Vector2i _get_block_id(int p_x, int p_z) const;
+protected:
+    bool _set(const StringName &p_name, const Variant &p_value);
+	bool _get(const StringName &p_name, Variant &r_ret) const;
+    void _get_property_list(List<PropertyInfo> *p_list) const;
+    static void _bind_methods();
 
 public:
-    Error create(const String p_path, int p_block_size, int p_chunk_size);
-    Error load(const String p_path);
-    void close();
+    Error load_headers();
+    void clear();
 
-    void load_chunk(PackedByteArray &p_buffer);
+    void set_block_size(int p_size);
+    int get_block_size() const;
+    void set_directory_use_custom(bool p_use_custom);
+    bool is_directory_use_custom() const;
+    void set_directory_path(String p_path);
+    String get_directory_path() const;
 
     TStorageStream();
     ~TStorageStream();
