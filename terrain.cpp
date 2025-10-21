@@ -70,6 +70,7 @@ void TTerrain::set_map_scale(const Vector3 &p_scale) {
 	ERR_FAIL_COND_EDMSG(p_scale.x <= 0.0 || p_scale.y <= 0.0 || p_scale.z <= 0.0, "Scale must be positive.");
 	info.map_scale = p_scale;
 	_set_update_distance_tolerance_squared();
+	_set_lod_levels();
 	dirty = true;
 }
 
@@ -80,6 +81,7 @@ Vector3 TTerrain::get_map_scale() const {
 void TTerrain::set_block_size(int p_size) {
 	ERR_FAIL_COND_EDMSG(p_size <= 0, "Terrain block size must be greater than zero.");
 	info.block_size = t_round_po2(p_size, info.block_size);
+	_set_lod_levels();
 }
 
 int TTerrain::get_block_size() const {
@@ -97,6 +99,8 @@ void TTerrain::set_world_blocks(const Vector2i &p_blocks) {
 	if (info.world_blocks.y < 1) {
 		info.world_blocks.y = 1;
 	}
+
+	_set_lod_levels();
 }
 
 Vector2i TTerrain::get_world_blocks() const {
@@ -258,7 +262,7 @@ void TTerrain::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "material", PROPERTY_HINT_RESOURCE_TYPE, "ShaderMaterial"), "set_material", "get_material");
 
 	ADD_GROUP("LOD", "lod_");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "lod_detailed_chunks_radius", PROPERTY_HINT_RANGE, "2,16"), "set_lod_detailed_chunks_radius", "get_lod_detailed_chunks_radius");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "lod_detailed_chunks_radius", PROPERTY_HINT_RANGE, "1,16"), "set_lod_detailed_chunks_radius", "get_lod_detailed_chunks_radius");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "lod_distance_ratio", PROPERTY_HINT_RANGE, "1.5,10.0,0.1"), "set_lod_distance_ratio", "get_lod_distance_ratio");
 	// ADD_SUBGROUP("Chunk Manual Update", "chunk_");
 	// ADD_PROPERTY(PropertyInfo(Variant::BOOL, "chunk_manual_update", PROPERTY_HINT_GROUP_ENABLE), "set_chunk_manual_update", "is_chunk_manual_update");
@@ -391,11 +395,7 @@ void TTerrain::_update_chunks() {
 
 	for (int i = 0; i < quad_tree->get_selection_count(); ++i) {
 		const TLODQuadTree::QTNode *node = quad_tree->get_selected_node(i);
-		const Vector3 bx = Vector3(node->size * info.map_scale.x, 0.0, 0.0);
-		const Vector3 by = Vector3(0.0, 1.0, 0.0);
-		const Vector3 bz = Vector3(0.0, 0.0, node->size * info.map_scale.z);
-		const Vector3 origin = Vector3(node->x * bx.x, node->min_y * info.map_scale.y, node->z * bz.z);
-		const Transform3D xform = Transform3D(Basis(bx, by, bz), origin);
+		const Transform3D xform = quad_tree->get_node_transform(node);
 		rs->multimesh_instance_set_transform(mm_chunks, i, xform);
 		const int lod = node->get_lod_level();
 		int color_index = lod / 2 + lod_half * (lod % 2);
@@ -734,13 +734,10 @@ void TTerrain::_debug_nodes_aabb_draw() const {
 	rs->multimesh_allocate_data(debug_aabb.multimesh, num_nodes, RenderingServer::MULTIMESH_TRANSFORM_3D, false, true);
 
 	for (int i = 0; i < num_nodes; ++i) {
-		int lod = quad_tree->get_selected_node_lod(i);
-		real_t margin = DEBUG_AABB_LOD0_MARGIN + lod * DEBUG_AABB_MARGIN_LOD_SCALE_FACTOR;
-		AABB node_aabb = quad_tree->get_selected_node_aabb(i);
-		Vector3 bx = Vector3(node_aabb.size.x, 0, 0);
-		Vector3 by = Vector3(0, node_aabb.size.y + 2.0 * margin, 0);
-		Vector3 bz = Vector3(0, 0, node_aabb.size.z);
-		Transform3D xform = Transform3D(Basis(bx, by, bz), node_aabb.position - Vector3(0, margin, 0));
+		const TLODQuadTree::QTNode *node = quad_tree->get_selected_node(i);
+		const int lod = node->get_lod_level();
+		const real_t margin = DEBUG_AABB_LOD0_MARGIN + lod * DEBUG_AABB_MARGIN_LOD_SCALE_FACTOR;
+		const Transform3D xform = quad_tree->get_node_transform(node);
 		rs->multimesh_instance_set_transform(debug_aabb.multimesh, i, xform);
 		rs->multimesh_instance_set_custom_data(debug_aabb.multimesh, i, debug_aabb.lod_colors[lod]);
 	}
@@ -752,7 +749,7 @@ void TTerrain::_debug_nodes_aabb_set_colors() {
 	}
 
 	debug_aabb.lod_colors.resize(info.lod_levels);
-	int half = (info.lod_levels + 1) / 2;
+	const int half = (info.lod_levels + 1) / 2;
 
 	for (int i = 0; i < info.lod_levels; ++i) {
 		int index = i / 2 + half * (i % 2);
