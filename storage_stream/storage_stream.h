@@ -35,7 +35,6 @@ private:
     String directory_path;
     HashMap<Vector2i, Block *> blocks;
 
-    // _FORCE_INLINE_ Vector2i _get_block_id(int p_x, int p_z) const;
 protected:
     bool _set(const StringName &p_name, const Variant &p_value);
 	bool _get(const StringName &p_name, Variant &r_ret) const;

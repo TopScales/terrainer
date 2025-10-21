@@ -29,8 +29,8 @@ class TLODQuadTree {
 
 public:
     struct QTNode {
-        int16_t x = 0;
-        int16_t z = 0;
+        uint16_t x = 0;
+        uint16_t z = 0;
         uint16_t size = 1;
         uint16_t min_y = 0;
         uint16_t max_y = 0;
@@ -75,12 +75,15 @@ private:
     static constexpr real_t LOD0_RADIUS_FACTOR = 1.2;
 
     enum NodeSelectionResult {
-		RESULT_UNDEFINED,
-		RESULT_OUT_OF_FRUSTUM,
-		RESULT_OUT_OF_RANGE,
-        RESULT_SELECTED,
-        RESULT_MAX_REACHED
+		RESULT_UNDEFINED = 0,
+		RESULT_OUT_OF_FRUSTUM = 1,
+		RESULT_OUT_OF_RANGE = 2,
+        RESULT_OUT_OF_MAP = 4,
+        RESULT_SELECTED = 8,
+        RESULT_MAX_REACHED = 16
 	};
+
+    static constexpr int RESULT_DISCARD = RESULT_OUT_OF_FRUSTUM | RESULT_OUT_OF_MAP;
 
     enum IntersectType
     {
@@ -96,12 +99,14 @@ private:
     int min_selected_lod_level = 0;
     int max_selected_lod_level = 0;
     Vector<int> lods_count;
+    Vector3 lod_offset;
+    Vector2i world_size;
 
-    NodeSelectionResult _lod_select(const Vector3 &p_viewer_position, bool p_parent_inside_frustum, int16_t p_x, int16_t p_z, uint16_t p_size, int p_lod_level, int p_stop_at_lod_level);
+    NodeSelectionResult _lod_select(const Vector3 &p_viewer_position, bool p_parent_inside_frustum, uint16_t p_x, uint16_t p_z, uint16_t p_size, int p_lod_level, int p_stop_at_lod_level);
+    _FORCE_INLINE_ AABB _get_node_AABB(uint16_t p_x, uint16_t p_z, uint16_t min_y, uint16_t max_y, uint16_t p_size) const;
     _FORCE_INLINE_ IntersectType _aabb_intersects_frustum(const AABB &p_aabb) const;
 
 public:
-
     void set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_radius);
     void select_nodes(const Vector3 &p_viewer_position, int p_stop_at_lod_level = 0);
     int get_selection_count() const;
@@ -111,6 +116,7 @@ public:
     void set_info(TTerrainInfo *p_info) { info = p_info; }
     int get_lod_nodes_count(int p_level) const;
     Ref<ImageTexture> get_morph_texture(real_t p_morph_start_ratio = DEFAULT_MORPH_START_RATIO) const;
+    Transform3D get_node_transform(const QTNode *p_node) const;
 
     TLODQuadTree();
     ~TLODQuadTree();
