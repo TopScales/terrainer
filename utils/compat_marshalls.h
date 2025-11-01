@@ -30,6 +30,19 @@ static inline unsigned int encode_uint16(uint16_t p_uint, uint8_t *p_arr) {
 
 	return sizeof(uint16_t);
 }
+
+static inline uint16_t decode_uint16(const uint8_t *p_arr) {
+	uint16_t u = 0;
+
+	for (int i = 0; i < 2; i++) {
+		uint16_t b = *p_arr;
+		b <<= (i * 8);
+		u |= b;
+		p_arr++;
+	}
+
+	return u;
+}
 #endif // TERRAINER_GDEXTENSION
 
 

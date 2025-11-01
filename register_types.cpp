@@ -14,13 +14,13 @@
 #include "register_types.h"
 
 #include "terrain.h"
+#include "map_storage/map_storage.h"
 
 #ifdef TOOLS_ENABLED
 #include "editor/terrain_editor_plugin.h"
 #endif
 
 #ifdef TERRAINER_MODULE
-#include "storage_stream/storage_stream.h"
 #include "core/object/class_db.h"
 #endif // TERRAINER_MODULE
 
@@ -35,7 +35,7 @@ using namespace godot;
 void initialize_terrainer_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE) {
 		GDREGISTER_CLASS(TTerrain);
-		// GDREGISTER_CLASS(TStorageStream);
+		GDREGISTER_CLASS(TMapStorage);
 	}
 #ifdef TOOLS_ENABLED
 	if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {

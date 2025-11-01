@@ -66,6 +66,13 @@ void TStorageStream::clear() {
     for (KeyValue<Vector2i, Block*> &kv : blocks) {
         Block *block = kv.value;
         block->file->close();
+
+        for (KeyValue<Vector2i, Region*> &kw : block->regions) {
+            Region *region = kw.value;
+            memdelete(region);
+        }
+
+        block->regions.clear();
         memdelete(block);
     }
 
@@ -73,6 +80,8 @@ void TStorageStream::clear() {
 }
 
 void TStorageStream::set_block_size(int p_size) {
+    ERR_FAIL_COND_EDMSG(p_size >= MAX_BLOCK_SIZE, vformat("Block size should be less than %d", MAX_BLOCK_SIZE));
+
     if (p_size != block_size) {
         block_size = p_size;
         emit_changed();
@@ -149,6 +158,9 @@ void TStorageStream::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_directory_path"), &TStorageStream::get_directory_path);
 
     ADD_PROPERTY(PropertyInfo(Variant::INT, "block_size", PROPERTY_HINT_RANGE, "1,256,1,or_greater"), "set_block_size", "get_block_size");
+}
+
+void TStorageStream::_load_region(Block *p_block, int p_region_id, Region *r_region) {
 }
 
 TStorageStream::TStorageStream() {

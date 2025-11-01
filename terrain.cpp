@@ -250,11 +250,6 @@ void TTerrain::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_debug_nodes_aabb_enabled", "enabled"), &TTerrain::set_debug_nodes_aabb_enabled);
 	ClassDB::bind_method(D_METHOD("is_debug_nodes_aabb_enabled"), &TTerrain::is_debug_nodes_aabb_enabled);
 
-	// ClassDB::bind_method(D_METHOD("set_chunk_manual_update", "manual"), &TTerrain::set_chunk_manual_update);
-	// ClassDB::bind_method(D_METHOD("is_chunk_manual_update"), &TTerrain::is_chunk_manual_update);
-	// ClassDB::bind_method(D_METHOD("set_chunk_active", "active"), &TTerrain::set_chunk_active);
-	// ClassDB::bind_method(D_METHOD("get_chunk_active"), &TTerrain::get_chunk_active);
-
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "chunk_size", PROPERTY_HINT_RANGE, vformat("4,%d", MAX_CHUNK_SIZE)), "set_chunk_size", "get_chunk_size");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "map_scale"), "set_map_scale", "get_map_scale");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "block_size", PROPERTY_HINT_RANGE, vformat("1,%d", MAX_CHUNK_SIZE)), "set_block_size", "get_block_size");
@@ -264,9 +259,6 @@ void TTerrain::_bind_methods() {
 	ADD_GROUP("LOD", "lod_");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "lod_detailed_chunks_radius", PROPERTY_HINT_RANGE, "1,16"), "set_lod_detailed_chunks_radius", "get_lod_detailed_chunks_radius");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "lod_distance_ratio", PROPERTY_HINT_RANGE, "1.5,10.0,0.1"), "set_lod_distance_ratio", "get_lod_distance_ratio");
-	// ADD_SUBGROUP("Chunk Manual Update", "chunk_");
-	// ADD_PROPERTY(PropertyInfo(Variant::BOOL, "chunk_manual_update", PROPERTY_HINT_GROUP_ENABLE), "set_chunk_manual_update", "is_chunk_manual_update");
-	// ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "chunk_active"), "set_chunk_active", "get_chunk_active");
 
 	ADD_GROUP("Debug", "debug_");
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "debug_nodes_aabb_enabled"), "set_debug_nodes_aabb_enabled", "is_debug_nodes_aabb_enabled");

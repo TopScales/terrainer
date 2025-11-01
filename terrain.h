@@ -12,8 +12,9 @@
 #ifndef TERRAINER_TERRAIN_H
 #define TERRAINER_TERRAIN_H
 
-#include "terrain_info.h"
 #include "lod_quad_tree.h"
+#include "map_storage/map_storage.h"
+#include "terrain_info.h"
 
 #ifdef TERRAINER_MODULE
 #include "scene/3d/node_3d.h"
@@ -41,9 +42,7 @@ private:
 
     int lod_detailed_chunks_radius = 4;
     Ref<ShaderMaterial> material;
-
-    // bool chunk_manual_update = false;
-    // Vector2i chunk_active;
+    Ref<TMapStorage> storage;
 
     TTerrainInfo info;
     RID mesh;
@@ -118,11 +117,6 @@ public:
 
     void set_debug_nodes_aabb_enabled(bool p_enabled);
     bool is_debug_nodes_aabb_enabled() const;
-
-    // void set_chunk_manual_update(bool p_manual);
-    // bool is_chunk_manual_update() const;
-    // void set_chunk_active(Vector2i p_active);
-    // Vector2i get_chunk_active() const;
 
 	TTerrain();
     ~TTerrain();
