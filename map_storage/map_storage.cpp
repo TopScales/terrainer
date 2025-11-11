@@ -12,6 +12,7 @@
 #include "map_storage.h"
 
 #include "core/io/dir_access.h"
+#include "utils/math.h"
 
 const String TMapStorage::DATA_FILE_EXT = "block";
 const String TMapStorage::DEFAULT_BLOCK_FILE_NAME = "map";
@@ -52,9 +53,9 @@ Error TMapStorage::load_headers() {
                 ERR_CONTINUE_EDMSG(version > FORMAT_VERSION, vformat("Wrong format version in block file %s.", file_name));
                 uint8_t shifts = file->get_8();
                 int csz = 1 << (shifts & 0x0F);
-                ERR_CONTINUE_EDMSG(csz != chunk_size, vformat("Incorrect chunk size in block file %s.", file_name));
+                ERR_CONTINUE_EDMSG(csz != world_info.chunk_size, vformat("Incorrect chunk size in block file %s.", file_name));
                 int bsz = 1 << ((shifts & 0xF0) >> 4);
-                ERR_CONTINUE_EDMSG(bsz != block_size, vformat("Incorrect block size in block file %s.", file_name));
+                ERR_CONTINUE_EDMSG(bsz != world_info.block_size, vformat("Incorrect block size in block file %s.", file_name));
                 uint16_t format = file->get_16();
                 ERR_CONTINUE_EDMSG(Block::format_to_segment_size(format) != segment_size, vformat("Incorrect segment size in block file %s.", file_name));
                 uint16_t splat_map_addr = file->get_16();
@@ -85,31 +86,53 @@ void TMapStorage::clear() {
 }
 
 void TMapStorage::set_chunk_size(int p_size) {
-    ERR_FAIL_COND_EDMSG(p_size * block_size > MAX_BLOCK_CELLS, "Number of block cells exceeded.");
+    ERR_FAIL_COND_EDMSG(p_size <= 0, "Terrain chunk size must be greater than zero.");
+    ERR_FAIL_COND_EDMSG(p_size * world_info.block_size > MAX_BLOCK_CELLS, "Number of terrain block cells exceeded.");
+    const int size = t_round_po2(p_size, world_info.chunk_size);
 
-    if (p_size != chunk_size) {
-        chunk_size = p_size;
+    if (size != world_info.chunk_size) {
+        world_info.chunk_size = size;
         _select_segment_size();
         emit_changed();
     }
 }
 
 int TMapStorage::get_chunk_size() const {
-    return chunk_size;
+    return world_info.chunk_size;
 }
 
 void TMapStorage::set_block_size(int p_size) {
-    ERR_FAIL_COND_EDMSG(p_size * chunk_size > MAX_BLOCK_CELLS, "Number of block cells exceeded.");
+    ERR_FAIL_COND_EDMSG(p_size <= 0, "Terrain block size must be greater than zero.");
+    ERR_FAIL_COND_EDMSG(p_size * world_info.chunk_size > MAX_BLOCK_CELLS, "Number of block cells exceeded.");
+    const int size = t_round_po2(p_size, world_info.block_size);
 
-    if (p_size != block_size) {
-        block_size = p_size;
+    if (size != world_info.block_size) {
+        world_info.block_size = size;
         _select_segment_size();
         emit_changed();
     }
 }
 
 int TMapStorage::get_block_size() const {
-    return block_size;
+    return world_info.block_size;
+}
+
+void TMapStorage::set_world_blocks(const Vector2i &p_blocks) {
+	world_info.world_blocks = p_blocks;
+
+	if (world_info.world_blocks.x < 1) {
+		world_info.world_blocks.x = 1;
+	}
+
+	if (world_info.world_blocks.y < 1) {
+		world_info.world_blocks.y = 1;
+	}
+
+	emit_changed();
+}
+
+Vector2i TMapStorage::get_world_blocks() const {
+	return world_info.world_blocks;
 }
 
 void TMapStorage::set_directory_use_custom(bool p_use_custom) {
@@ -132,6 +155,10 @@ String TMapStorage::get_directory_path() const {
     } else {
         return get_path().get_base_dir();
     }
+}
+
+TWorldInfo *TMapStorage::get_world_info() {
+    return &world_info;
 }
 
 void TMapStorage::_notification(int p_what) {
@@ -192,7 +219,7 @@ void TMapStorage::_bind_methods() {
 }
 
 void TMapStorage::_select_segment_size() {
-    int total_size = chunk_size * block_size;
+    int total_size = world_info.chunk_size * world_info.block_size;
 
     if (total_size > (1 << 12)) {
         segment_size = SEGMENT_32K;

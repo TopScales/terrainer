@@ -93,6 +93,7 @@ private:
     };
 
     TTerrainInfo *info;
+    TWorldInfo *world_info;
     QTNode selected_buffer[MAX_NODE_SELECTION_COUNT];
     Vector<real_t> lod_visibility_range;
     int selection_count = 0;
@@ -114,6 +115,7 @@ public:
     AABB get_selected_node_aabb(int p_index) const;
     int get_selected_node_lod(int p_index) const;
     void set_info(TTerrainInfo *p_info) { info = p_info; }
+    void set_world_info(TWorldInfo *p_info) { world_info = p_info; }
     int get_lod_nodes_count(int p_level) const;
     Ref<ImageTexture> get_morph_texture(real_t p_morph_start_ratio = DEFAULT_MORPH_START_RATIO) const;
     Transform3D get_node_transform(const QTNode *p_node) const;

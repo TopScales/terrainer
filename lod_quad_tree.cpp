@@ -16,11 +16,11 @@
 
 void TLODQuadTree::set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_radius) {
     int levels = 1;
-    real_t radius0 = LOD0_RADIUS_FACTOR * p_lod_detailed_chunks_radius * info->chunk_size * MAX(info->map_scale.x, info->map_scale.z);
+    real_t radius0 = LOD0_RADIUS_FACTOR * p_lod_detailed_chunks_radius * world_info->chunk_size * MAX(world_info->map_scale.x, world_info->map_scale.z);
     real_t level_radius = radius0;
     real_t current_radius = 0.0;
-    info->root_node_size = info->chunk_size;
-    world_size = info->world_blocks * info->block_size * info->chunk_size;
+    info->root_node_size = world_info->chunk_size;
+    world_size = world_info->world_blocks * world_info->block_size * world_info->chunk_size;
     int min_world_size = MIN(world_size.x, world_size.y);
 
     while (current_radius + level_radius < p_far_view && info->root_node_size <= min_world_size) {
@@ -50,13 +50,15 @@ void TLODQuadTree::set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_r
     info->root_nodes_count_x = Math::ceil((real_t)world_size.x / (real_t)info->root_node_size);
     info->root_nodes_count_z = Math::ceil((real_t)world_size.y / (real_t)info->root_node_size);
     lods_count.resize(levels);
-    real_t offset_x = (real_t)(info->world_blocks.x / 2) * info->block_size * info->chunk_size * info->map_scale.x;
-    real_t offset_z = (real_t)(info->world_blocks.y / 2) * info->block_size * info->chunk_size * info->map_scale.z;
+    real_t offset_x = (real_t)(world_info->world_blocks.x / 2) * world_info->block_size * world_info->chunk_size * world_info->map_scale.x;
+    real_t offset_z = (real_t)(world_info->world_blocks.y / 2) * world_info->block_size * world_info->chunk_size * world_info->map_scale.z;
     lod_offset = Vector3(-offset_x, 0.0, -offset_z);
 }
 
 void TLODQuadTree::select_nodes(const Vector3 &p_viewer_position, int p_stop_at_lod_level) {
     selection_count = 0;
+    // TODO: Organize root nodes by lod range.
+    // TODO: Load textures without frustum culling.
 
     for (uint16_t iz = 0; iz < info->root_nodes_count_z; ++iz) {
         for (uint16_t ix = 0; ix < info->root_nodes_count_x; ++ix) {
@@ -89,8 +91,8 @@ const TLODQuadTree::QTNode *TLODQuadTree::get_selected_node(int p_index) const {
 AABB TLODQuadTree::get_selected_node_aabb(int p_index) const {
     ERR_FAIL_INDEX_V_EDMSG(p_index, selection_count, AABB(), "Selected node index out of bounds.");
     const QTNode &node = selected_buffer[p_index];
-    Vector3 size = Vector3(node.size, node.max_y - node.min_y, node.size) * info->map_scale;
-    Vector3 position = Vector3(node.x * size.x, node.min_y * info->map_scale.y, node.z * size.z);
+    Vector3 size = Vector3(node.size, node.max_y - node.min_y, node.size) * world_info->map_scale;
+    Vector3 position = Vector3(node.x * size.x, node.min_y * world_info->map_scale.y, node.z * size.z);
     return AABB(position, size);
 }
 
@@ -128,10 +130,10 @@ Ref<ImageTexture> TLODQuadTree::get_morph_texture(real_t p_morph_start_ratio) co
 }
 
 Transform3D TLODQuadTree::get_node_transform(const QTNode *p_node) const {
-    const Vector3 bx = Vector3(p_node->size * info->map_scale.x, 0.0, 0.0);
+    const Vector3 bx = Vector3(p_node->size * world_info->map_scale.x, 0.0, 0.0);
     const Vector3 by = Vector3(0.0, 1.0, 0.0);
-    const Vector3 bz = Vector3(0.0, 0.0, p_node->size * info->map_scale.z);
-    const Vector3 origin = Vector3(p_node->x * bx.x, p_node->min_y * info->map_scale.y, p_node->z * bz.z) + lod_offset;
+    const Vector3 bz = Vector3(0.0, 0.0, p_node->size * world_info->map_scale.z);
+    const Vector3 origin = Vector3(p_node->x * bx.x, p_node->min_y * world_info->map_scale.y, p_node->z * bz.z) + lod_offset;
     return Transform3D(Basis(bx, by, bz), origin);
 }
 
@@ -224,8 +226,8 @@ TLODQuadTree::NodeSelectionResult TLODQuadTree::_lod_select(const Vector3 &p_vie
 }
 
 AABB TLODQuadTree::_get_node_AABB(uint16_t p_x, uint16_t p_z, uint16_t min_y, uint16_t max_y, uint16_t p_size) const {
-    const Vector3 node_size = Vector3(p_size, max_y - min_y, p_size) * info->map_scale;
-    const Vector3 node_position = Vector3(p_x * node_size.x, min_y * info->map_scale.y, p_z * node_size.z) + lod_offset;
+    const Vector3 node_size = Vector3(p_size, max_y - min_y, p_size) * world_info->map_scale;
+    const Vector3 node_position = Vector3(p_x * node_size.x, min_y * world_info->map_scale.y, p_z * node_size.z) + lod_offset;
     return AABB(node_position, node_size);
 }
 
@@ -257,5 +259,4 @@ TLODQuadTree::TLODQuadTree() {
 }
 
 TLODQuadTree::~TLODQuadTree() {
-
 }

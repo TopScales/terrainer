@@ -13,9 +13,10 @@
 #include "../utils/compat_marshalls.h"
 #include "map_storage.h"
 
-void TMinmaxMap::setup(const TTerrainInfo &p_info) {
+void TMinmaxMap::setup(const TTerrainInfo &p_info, const TWorldInfo &p_world_info) {
     maps.resize(p_info.lod_levels);
-    int size = p_info.block_size * p_info.block_size * p_info.world_blocks.x * p_info.world_blocks.y;
+    int size = p_world_info.block_size * p_world_info.block_size * p_world_info.world_blocks.x * p_world_info.world_blocks.y;
+    // FIX: Consider case where world_blocks is odd.
 
     for (int i = 0; i < p_info.lod_levels; ++i) {
         const int sector_size = i == 0 ? 3 : 4;
@@ -24,20 +25,20 @@ void TMinmaxMap::setup(const TTerrainInfo &p_info) {
     }
 }
 
-void TMinmaxMap::load_block(const Vector2i &p_block, const Ref<FileAccess> &p_file, const TTerrainInfo &p_info, int p_max_lod) {
+void TMinmaxMap::load_block(const Vector2i &p_block, const Ref<FileAccess> &p_file, const TWorldInfo &p_world_info, int p_max_lod) {
     p_file->seek(TMapStorage::HEADER_SIZE);
-    int length = p_info.block_size;
-    const int x = p_block.x + p_info.world_blocks.x / 2;
-    const int z = p_block.y + p_info.world_blocks.y / 2;
+    int length = p_world_info.block_size;
+    const int x = p_block.x + p_world_info.world_blocks.x / 2;
+    const int z = p_block.y + p_world_info.world_blocks.y / 2;
 
     for (int ilod = 0; ilod < p_max_lod; ++ilod) {
-        const int block_offset = length * (x + z * length * p_info.world_blocks.x);
+        const int block_offset = length * (x + z * length * p_world_info.world_blocks.x);
         uint8_t *buffer = maps.get(ilod).ptrw();
         const int segmet_size = ilod == 0 ? 3 : 4;
 
         for (int irow = 0; irow < length; ++irow) {
             const PackedByteArray row = p_file->get_buffer(length * segmet_size);
-            const int offset = block_offset + irow * length * p_info.world_blocks.x;
+            const int offset = block_offset + irow * length * p_world_info.world_blocks.x;
             memcpy(buffer + offset, row.ptr(), length * segmet_size);
         }
 
@@ -45,12 +46,12 @@ void TMinmaxMap::load_block(const Vector2i &p_block, const Ref<FileAccess> &p_fi
     }
 }
 
-void TMinmaxMap::generate_remaining_lods(int p_from_lod, const TTerrainInfo &p_info) {
+void TMinmaxMap::generate_remaining_lods(int p_from_lod, const TWorldInfo &p_world_info) {
     // TODO: Check last lod is within bounds.
     ERR_FAIL_INDEX(p_from_lod, maps.size());
     const int next_lod = p_from_lod + 1;
-    int size_x = (p_info.block_size * p_info.world_blocks.x) >> next_lod;
-    int size_z = (p_info.block_size * p_info.world_blocks.y) >> next_lod;
+    int size_x = (p_world_info.block_size * p_world_info.world_blocks.x) >> next_lod;
+    int size_z = (p_world_info.block_size * p_world_info.world_blocks.y) >> next_lod;
 
     for (int ilod = next_lod; ilod < maps.size(); ++ilod) {
         DEV_ASSERT(size_x * size_z * 4 == maps[ilod].size());
@@ -83,10 +84,10 @@ void TMinmaxMap::generate_remaining_lods(int p_from_lod, const TTerrainInfo &p_i
     }
 }
 
-void TMinmaxMap::get_minmax(uint16_t p_x, uint16_t p_z, int p_lod, const TTerrainInfo &p_info, uint16_t &r_min, uint16_t &r_max) {
+void TMinmaxMap::get_minmax(uint16_t p_x, uint16_t p_z, int p_lod, const TWorldInfo &p_world_info, uint16_t &r_min, uint16_t &r_max) {
     const bool is_lod0 = p_lod == 0;
     const int step_size = is_lod0 ? 3 : 4;
-    const int size = (p_info.block_size * p_info.world_blocks.x) >> p_lod;
+    const int size = (p_world_info.block_size * p_world_info.world_blocks.x) >> p_lod;
     const int index = (p_x + p_z * size) * step_size;
     ERR_FAIL_COND_EDMSG(index + step_size > maps.get(p_lod).size(), vformat("Minmax map indices (%d, %d) out of bounds for LOD %d.", p_x, p_z, p_lod));
     const uint8_t *map = maps.get(p_lod).ptr();
@@ -95,10 +96,10 @@ void TMinmaxMap::get_minmax(uint16_t p_x, uint16_t p_z, int p_lod, const TTerrai
     r_max = minmax.max;
 }
 
-uint16_t TMinmaxMap::get_chunk_min(uint16_t p_x, uint16_t p_z, const TTerrainInfo &p_info) {
-    const int size = p_info.block_size * p_info.world_blocks.x;
+uint16_t TMinmaxMap::get_chunk_min(uint16_t p_x, uint16_t p_z, const TWorldInfo &p_world_info) {
+    const int size = p_world_info.block_size * p_world_info.world_blocks.x;
     const int index = (p_x + p_z * size) * 3;
-    ERR_FAIL_COND_EDMSG(index + 3 > maps.get(0).size(), vformat("Minmax map indices (%d, %d) out of bounds for LOD 0."));
+    ERR_FAIL_COND_V_EDMSG(index + 3 > maps.get(0).size(), 0ui16, vformat("Minmax map indices (%d, %d) out of bounds for LOD 0."));
     const uint8_t *map = maps.get(0).ptr() + index;
     uint16_t min = *map | (*(map + 1) << 8);
     return min;

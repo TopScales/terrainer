@@ -39,72 +39,44 @@ void TTerrain::set_camera(Camera3D *p_camera) {
 	use_viewport_camera = camera == nullptr;
 }
 
-void TTerrain::set_chunk_size(int p_size) {
-	ERR_FAIL_COND_EDMSG(p_size <= 0, "Terrain chunk size must be greater than zero.");
-	ERR_FAIL_COND_EDMSG(p_size > MAX_CHUNK_SIZE, vformat("Terrain chunk size must be at most %d.", MAX_CHUNK_SIZE));
-	const int size = t_round_po2(p_size, info.chunk_size);
-
-	if (size != info.chunk_size) {
-		info.chunk_size = size;
-		_set_update_distance_tolerance_squared();
-		_set_lod_levels();
-
-		if (inside_world) {
-			_create_mesh();
-		} else {
-			mesh_valid = false;
-		}
+void TTerrain::set_storage(const Ref<TMapStorage> &p_storage) {
+	if (storage.is_valid()) {
+		storage->disconnect_changed(callable_mp(this, &TTerrain::_storage_changed));
 	}
 
-	if (material.is_valid()) {
-		material->set_shader_parameter("grid_const", Vector2(0.5 * (real_t)info.chunk_size, 2.0 / (real_t)info.chunk_size));
-	}
+	storage = p_storage;
 
+	if (storage.is_valid()) {
+		storage->connect_changed(callable_mp(this, &TTerrain::_storage_changed));
+		world_info = storage->get_world_info();
+		world_info->map_scale = map_scale;
+		quad_tree->set_world_info(world_info);
+		_storage_changed();
+	} else {
+		world_info = nullptr;
+		quad_tree->set_world_info(nullptr);
+	}
 }
 
-int TTerrain::get_chunk_size() const {
-	return info.chunk_size;
+Ref<TMapStorage> TTerrain::get_storage() const {
+	return storage;
 }
 
 void TTerrain::set_map_scale(const Vector3 &p_scale) {
 	ERR_FAIL_COND_EDMSG(p_scale.x <= 0.0 || p_scale.y <= 0.0 || p_scale.z <= 0.0, "Scale must be positive.");
-	info.map_scale = p_scale;
-	_set_update_distance_tolerance_squared();
-	_set_lod_levels();
+	map_scale = p_scale;
+
+	if (world_info) {
+		world_info->map_scale = map_scale;
+		_set_update_distance_tolerance_squared();
+		_set_lod_levels();
+	}
+
 	dirty = true;
 }
 
 Vector3 TTerrain::get_map_scale() const {
-	return info.map_scale;
-}
-
-void TTerrain::set_block_size(int p_size) {
-	ERR_FAIL_COND_EDMSG(p_size <= 0, "Terrain block size must be greater than zero.");
-	info.block_size = t_round_po2(p_size, info.block_size);
-	_set_lod_levels();
-}
-
-int TTerrain::get_block_size() const {
-	return info.block_size;
-}
-
-void TTerrain::set_world_blocks(const Vector2i &p_blocks) {
-	info.world_blocks = p_blocks;
-	dirty = true;
-
-	if (info.world_blocks.x < 1) {
-		info.world_blocks.x = 1;
-	}
-
-	if (info.world_blocks.y < 1) {
-		info.world_blocks.y = 1;
-	}
-
-	_set_lod_levels();
-}
-
-Vector2i TTerrain::get_world_blocks() const {
-	return info.world_blocks;
+	return map_scale;
 }
 
 void TTerrain::set_material(const Ref<ShaderMaterial> &p_material) {
@@ -114,8 +86,8 @@ void TTerrain::set_material(const Ref<ShaderMaterial> &p_material) {
 		RenderingServer::get_singleton()->mesh_surface_set_material(mesh, 0, material->get_rid());
 	}
 
-	if (material.is_valid()) {
-		material->set_shader_parameter("grid_const", Vector2(0.5 * (real_t)info.chunk_size, 2.0 / (real_t)info.chunk_size));
+	if (material.is_valid() && world_info) {
+		material->set_shader_parameter("grid_const", Vector2(0.5 * (real_t)world_info->chunk_size, 2.0 / (real_t)world_info->chunk_size));
 	}
 }
 
@@ -172,22 +144,6 @@ bool TTerrain::is_debug_nodes_aabb_enabled() const {
 	return debug_nodes_aabb_enabled;
 }
 
-// void TTerrain::set_chunk_manual_update(bool p_manual) {
-// 	chunk_manual_update = p_manual;
-// }
-
-// bool TTerrain::is_chunk_manual_update() const {
-// 	return chunk_manual_update;
-// }
-
-// void TTerrain::set_chunk_active(Vector2i p_active) {
-// 	chunk_active = p_active;
-// }
-
-// Vector2i TTerrain::get_chunk_active() const {
-// 	return chunk_active;
-// }
-
 void TTerrain::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_WORLD: {
@@ -228,14 +184,8 @@ void TTerrain::_notification(int p_what) {
 }
 
 void TTerrain::_bind_methods() {
-	ClassDB::bind_method(D_METHOD("set_chunk_size", "size"), &TTerrain::set_chunk_size);
-	ClassDB::bind_method(D_METHOD("get_chunk_size"), &TTerrain::get_chunk_size);
 	ClassDB::bind_method(D_METHOD("set_map_scale", "scale"), &TTerrain::set_map_scale);
 	ClassDB::bind_method(D_METHOD("get_map_scale"), &TTerrain::get_map_scale);
-	ClassDB::bind_method(D_METHOD("set_block_size", "size"), &TTerrain::set_block_size);
-	ClassDB::bind_method(D_METHOD("get_block_size"), &TTerrain::get_block_size);
-	ClassDB::bind_method(D_METHOD("set_world_blocks", "size"), &TTerrain::set_world_blocks);
-	ClassDB::bind_method(D_METHOD("get_world_blocks"), &TTerrain::get_world_blocks);
 	ClassDB::bind_method(D_METHOD("set_material", "material"), &TTerrain::set_material);
 	ClassDB::bind_method(D_METHOD("get_material"), &TTerrain::get_material);
 	ClassDB::bind_method(D_METHOD("set_lod_detailed_chunks_radius", "radius"), &TTerrain::set_lod_detailed_chunks_radius);
@@ -250,10 +200,7 @@ void TTerrain::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_debug_nodes_aabb_enabled", "enabled"), &TTerrain::set_debug_nodes_aabb_enabled);
 	ClassDB::bind_method(D_METHOD("is_debug_nodes_aabb_enabled"), &TTerrain::is_debug_nodes_aabb_enabled);
 
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "chunk_size", PROPERTY_HINT_RANGE, vformat("4,%d", MAX_CHUNK_SIZE)), "set_chunk_size", "get_chunk_size");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "map_scale"), "set_map_scale", "get_map_scale");
-	ADD_PROPERTY(PropertyInfo(Variant::INT, "block_size", PROPERTY_HINT_RANGE, vformat("1,%d", MAX_CHUNK_SIZE)), "set_block_size", "get_block_size");
-	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "world_blocks"), "set_world_blocks", "get_world_blocks");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "material", PROPERTY_HINT_RESOURCE_TYPE, "ShaderMaterial"), "set_material", "get_material");
 
 	ADD_GROUP("LOD", "lod_");
@@ -314,8 +261,8 @@ void TTerrain::_update_transform() {
 }
 
 void TTerrain::_set_update_distance_tolerance_squared() {
-	real_t min_size = MIN(info.map_scale.x, info.map_scale.z);
-	update_distance_tolerance_squared = info.chunk_size * min_size * UPDATE_TOLERANCE_FACTOR;
+	real_t min_size = MIN(map_scale.x, map_scale.z);
+	update_distance_tolerance_squared = world_info->chunk_size * min_size * UPDATE_TOLERANCE_FACTOR;
 	update_distance_tolerance_squared *= update_distance_tolerance_squared;
 }
 
@@ -408,10 +355,10 @@ void TTerrain::_update_chunks() {
 }
 
 void TTerrain::_create_mesh() {
-	const int num_points = info.chunk_size + 1;
+	const int num_points = world_info->chunk_size + 1;
 	PackedVector3Array vertices;
 	vertices.resize(num_points * num_points);
-	real_t s = 1.0 / (real_t)info.chunk_size;
+	real_t s = 1.0 / (real_t)world_info->chunk_size;
 
 	// Make vertices.
 	for (int iz = 0; iz < num_points; ++iz) {
@@ -427,7 +374,7 @@ void TTerrain::_create_mesh() {
 	int index = 0;
 	const int half = num_points / 2;
 	PackedInt32Array indices;
-	indices.resize(6 * info.chunk_size * info.chunk_size);
+	indices.resize(6 * world_info->chunk_size * world_info->chunk_size);
 	bool tri_a = true;
 
 	// Top left.
@@ -461,7 +408,7 @@ void TTerrain::_create_mesh() {
 
 	// Top right.
 	for (int iz = 0; iz < half; ++iz) {
-		for (int ix = half; ix < info.chunk_size; ++ix) {
+		for (int ix = half; ix < world_info->chunk_size; ++ix) {
 			const int i1 = ix + num_points * iz;
 			const int i2 = ix + 1 + num_points * iz;
 			const int i3 = ix + num_points * (iz + 1);
@@ -489,7 +436,7 @@ void TTerrain::_create_mesh() {
 	}
 
 	// Bottom left.
-	for (int iz = half; iz < info.chunk_size; ++iz) {
+	for (int iz = half; iz < world_info->chunk_size; ++iz) {
 		for (int ix = 0; ix < half; ++ix) {
 			const int i1 = ix + num_points * iz;
 			const int i2 = ix + 1 + num_points * iz;
@@ -518,8 +465,8 @@ void TTerrain::_create_mesh() {
 	}
 
 	// Bottom right.
-	for (int iz = half; iz < info.chunk_size; ++iz) {
-		for (int ix = half; ix < info.chunk_size; ++ix) {
+	for (int iz = half; iz < world_info->chunk_size; ++iz) {
+		for (int ix = half; ix < world_info->chunk_size; ++ix) {
 			const int i1 = ix + num_points * iz;
 			const int i2 = ix + 1 + num_points * iz;
 			const int i3 = ix + num_points * (iz + 1);
@@ -557,6 +504,21 @@ void TTerrain::_create_mesh() {
 
 	if (material.is_valid()) {
 		rs->mesh_surface_set_material(mesh, 0, material->get_rid());
+	}
+}
+
+void TTerrain::_storage_changed() {
+	_set_update_distance_tolerance_squared();
+	_set_lod_levels();
+
+	if (inside_world) {
+		_create_mesh();
+	} else {
+		mesh_valid = false;
+	}
+
+	if (material.is_valid()) {
+		material->set_shader_parameter("grid_const", Vector2(0.5 * (real_t)world_info->chunk_size, 2.0 / (real_t)world_info->chunk_size));
 	}
 }
 

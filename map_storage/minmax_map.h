@@ -36,11 +36,11 @@ private:
     };
 
 public:
-    void setup(const TTerrainInfo &p_info);
-    void load_block(const Vector2i &p_block, const Ref<FileAccess> &p_file, const TTerrainInfo &p_info, int p_max_lod);
-    void generate_remaining_lods(int p_from_lod, const TTerrainInfo &p_info);
-    void get_minmax(uint16_t p_x, uint16_t p_z, int p_lod, const TTerrainInfo &p_info, uint16_t &r_min, uint16_t &r_max);
-    uint16_t get_chunk_min(uint16_t p_x, uint16_t p_z, const TTerrainInfo &p_info);
+    void setup(const TTerrainInfo &p_info, const TWorldInfo &p_world_info);
+    void load_block(const Vector2i &p_block, const Ref<FileAccess> &p_file, const TWorldInfo &p_world_info, int p_max_lod);
+    void generate_remaining_lods(int p_from_lod, const TWorldInfo &p_world_info);
+    void get_minmax(uint16_t p_x, uint16_t p_z, int p_lod, const TWorldInfo &p_world_info, uint16_t &r_min, uint16_t &r_max);
+    uint16_t get_chunk_min(uint16_t p_x, uint16_t p_z, const TWorldInfo &p_world_info);
     void clear();
 
     TMinmaxMap();

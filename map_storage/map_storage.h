@@ -56,10 +56,9 @@ private:
             file(p_file), version(p_version), format(p_format), splat_addr(p_splat_addr), meta_addr(p_meta_addr) {}
     };
 
-    int chunk_size = 16;
-    int block_size = 32;
     bool directory_use_custom = false;
     String directory_path;
+    TWorldInfo world_info;
     HashMap<Vector2i, Block *> blocks;
     SegmentSize segment_size = SEGMENT_1K;
 
@@ -83,10 +82,13 @@ public:
     int get_chunk_size() const;
     void set_block_size(int p_size);
     int get_block_size() const;
+    void set_world_blocks(const Vector2i &p_blocks);
+    Vector2i get_world_blocks() const;
     void set_directory_use_custom(bool p_use_custom);
     bool is_directory_use_custom() const;
     void set_directory_path(String p_path);
     String get_directory_path() const;
+    TWorldInfo *get_world_info();
 
     TMapStorage();
     ~TMapStorage();

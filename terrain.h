@@ -45,6 +45,8 @@ private:
     Ref<TMapStorage> storage;
 
     TTerrainInfo info;
+    Vector3 map_scale;
+    TWorldInfo *world_info = nullptr;
     RID mesh;
     Camera3D *camera = nullptr;
     TLODQuadTree *quad_tree;
@@ -83,6 +85,7 @@ private:
     void _update_viewer();
     void _update_chunks();
     void _create_mesh();
+    void _storage_changed();
 
     void _debug_nodes_aabb_create();
 	void _debug_nodes_aabb_free();
@@ -96,14 +99,10 @@ protected:
 public:
     void set_camera(Camera3D *p_camera);
 
-    void set_chunk_size(int p_size);
-    int get_chunk_size() const;
+    void set_storage(const Ref<TMapStorage> &p_storage);
+    Ref<TMapStorage> get_storage() const;
     void set_map_scale(const Vector3 &p_scale);
     Vector3 get_map_scale() const;
-    void set_block_size(int p_size);
-    int get_block_size() const;
-    void set_world_blocks(const Vector2i &p_blocks);
-    Vector2i get_world_blocks() const;
     void set_material(const Ref<ShaderMaterial> &p_material);
     Ref<ShaderMaterial> get_material() const;
     void set_lod_detailed_chunks_radius(int p_radius);
