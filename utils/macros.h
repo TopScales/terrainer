@@ -12,11 +12,5 @@
 #ifndef TERRAINER_MACROS_H
 #define TERRAINER_MACROS_H
 
-#ifdef TERRAINER_MODULE
-#define SERVER_FREE(server, rid) server->free(rid)
-#elif TERRAINER_GDEXTENSION
-#define SERVER_FREE(server, rid) server->free_rid(rid)
-#endif
-
 
 #endif // TERRAINER_MACROS_H

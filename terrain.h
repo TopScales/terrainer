@@ -19,6 +19,7 @@
 #ifdef TERRAINER_MODULE
 #include "scene/3d/node_3d.h"
 #include "scene/3d/camera_3d.h"
+#include "scene/resources/mesh.h"
 #endif // TERRAINER_MODULE
 
 #ifdef TERRAINER_GDEXTENSION

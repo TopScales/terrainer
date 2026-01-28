@@ -705,11 +705,11 @@ void fragment() {
 
 void TTerrain::_debug_nodes_aabb_free() {
 	RenderingServer *const rs = RenderingServer::get_singleton();
-	SERVER_FREE(rs, debug_aabb.instance);
-	SERVER_FREE(rs, debug_aabb.multimesh);
-	SERVER_FREE(rs, debug_aabb.mesh);
-	SERVER_FREE(rs, debug_aabb.material);
-	SERVER_FREE(rs, debug_aabb.shader);
+	rs->free_rid(debug_aabb.instance);
+	rs->free_rid(debug_aabb.multimesh);
+	rs->free_rid(debug_aabb.mesh);
+	rs->free_rid(debug_aabb.material);
+	rs->free_rid(debug_aabb.shader);
 	debug_aabb.lod_colors.clear();
 	debug_nodes_aabb_enabled = false;
 }
@@ -772,9 +772,9 @@ TTerrain::TTerrain() {
 
 TTerrain::~TTerrain() {
 	RenderingServer *const rs = RenderingServer::get_singleton();
-	SERVER_FREE(rs, mm_instance);
-	SERVER_FREE(rs, mm_chunks);
-	SERVER_FREE(rs, mesh);
+	rs->free_rid(mm_instance);
+	rs->free_rid(mm_chunks);
+	rs->free_rid(mesh);
 	memdelete(quad_tree);
 
 	if (debug_nodes_aabb_enabled) {

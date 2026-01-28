@@ -231,8 +231,8 @@ void TerrainEditor::edit(TTerrain *p_terrain) {
 }
 
 void TerrainEditor::_notification(int p_what) {
-	switch(p_what) {
-	}
+	// switch(p_what) {
+	// }
 }
 
 void TerrainEditor::_bind_methods() {

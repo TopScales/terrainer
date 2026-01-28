@@ -18,7 +18,8 @@
 #include "core/os/mutex.h"
 #include "minmax_map.h"
 #include "scene/resources/texture_rd.h"
-#include "servers/rendering/rendering_device_binds.h"
+// #include "servers/rendering/rendering_device_binds.h"
+#include "servers/rendering/rendering_server.h"
 #include "../terrain_info.h"
 
 class TMapStorage : public Resource {

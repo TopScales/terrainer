@@ -100,7 +100,7 @@ void TMapStorage::setup(const TTerrainInfo &p_info) {
 
 
     if (rd_heightmap_texture.is_valid()) {
-        RenderingServer::get_singleton()->get_rendering_device()->free(rd_heightmap_texture);
+        RenderingServer::get_singleton()->get_rendering_device()->free_rid(rd_heightmap_texture);
     }
 }
 
@@ -191,7 +191,7 @@ void TMapStorage::load_from_buffer(const PackedByteArray &p_heightmap) {
 void TMapStorage::arrange_layers() {
     if (used_layers > num_layers) {
         if (rd_heightmap_texture.is_valid()) {
-            RenderingServer::get_singleton()->get_rendering_device()->free(rd_heightmap_texture);
+            RenderingServer::get_singleton()->get_rendering_device()->free_rid(rd_heightmap_texture);
         }
 
         int size = num_layer_blocks * world_info.block_size * world_info.chunk_size + 1;
@@ -580,6 +580,6 @@ TMapStorage::~TMapStorage() {
     RenderingDevice *rd = RenderingServer::get_singleton()->get_rendering_device();
 
     if (rd_heightmap_texture.is_valid()) {
-        rd->free(rd_heightmap_texture);
+        rd->free_rid(rd_heightmap_texture);
     }
 }
