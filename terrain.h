@@ -45,7 +45,7 @@ private:
     Ref<TMapStorage> storage;
 
     TTerrainInfo info;
-    Vector3 map_scale;
+    Vector3 map_scale = Vector3(1.0, 1.0, 1.0);
     TWorldInfo *world_info = nullptr;
     RID mesh;
     Camera3D *camera = nullptr;
@@ -58,9 +58,12 @@ private:
     Transform3D last_transform;
     bool use_viewport_camera = true;
     bool inside_world = false;
+    Error storage_status = ERR_FILE_NOT_FOUND;
 
     RID mm_chunks;
     RID mm_instance;
+
+    Ref<ImageTexture> node_info;
 
     struct DebugAABB {
         RID shader;
@@ -86,6 +89,8 @@ private:
     void _update_chunks();
     void _create_mesh();
     void _storage_changed();
+
+    _FORCE_INLINE_ void _configure_chunk_mesh(RenderingServer *p_rs, const TLODQuadTree::QTNode *p_node, int p_instance_index);
 
     void _debug_nodes_aabb_create();
 	void _debug_nodes_aabb_free();

@@ -46,9 +46,9 @@ struct TTerrainInfo {
 #elif TERRAINER_GDEXTENSION
     TypedArray<Plane> frustum;
 #endif
-    uint16_t root_node_size = 16;
-    uint16_t root_nodes_count_x = 4;
-    uint16_t root_nodes_count_z = 4;
+    uint16_t root_node_size = 1;
+    uint16_t root_nodes_count_x = 1;
+    uint16_t root_nodes_count_z = 1;
     int min_selected_lod = 1;
     int max_selected_lod = 1;
 };

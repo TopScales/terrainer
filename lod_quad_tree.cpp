@@ -19,11 +19,11 @@ void TLODQuadTree::set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_r
     real_t radius0 = LOD0_RADIUS_FACTOR * p_lod_detailed_chunks_radius * world_info->chunk_size * MAX(world_info->map_scale.x, world_info->map_scale.z);
     real_t level_radius = radius0;
     real_t current_radius = 0.0;
-    info->root_node_size = world_info->chunk_size;
-    world_size = world_info->world_blocks * world_info->block_size * world_info->chunk_size;
+    info->root_node_size = 1;
+    world_size = world_info->world_blocks * world_info->block_size;
     int min_world_size = MIN(world_size.x, world_size.y);
 
-    while (current_radius + level_radius < p_far_view && info->root_node_size <= min_world_size) {
+    while (current_radius + level_radius < p_far_view && info->root_node_size < min_world_size && levels < MAX_LOD_LEVELS) {
         current_radius += level_radius;
         level_radius *= info->lod_distance_ratio;
         info->root_node_size *= 2;
@@ -50,19 +50,19 @@ void TLODQuadTree::set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_r
     info->root_nodes_count_x = Math::ceil((real_t)world_size.x / (real_t)info->root_node_size);
     info->root_nodes_count_z = Math::ceil((real_t)world_size.y / (real_t)info->root_node_size);
     lods_count.resize(levels);
-    real_t offset_x = (real_t)(world_info->world_blocks.x / 2) * world_info->block_size * world_info->chunk_size * world_info->map_scale.x;
-    real_t offset_z = (real_t)(world_info->world_blocks.y / 2) * world_info->block_size * world_info->chunk_size * world_info->map_scale.z;
+    real_t offset_x = (real_t)(world_size.x / 2) * world_info->chunk_size * world_info->map_scale.x;
+    real_t offset_z = (real_t)(world_size.y / 2) * world_info->chunk_size * world_info->map_scale.z;
     lod_offset = Vector3(-offset_x, 0.0, -offset_z);
 }
 
-void TLODQuadTree::select_nodes(const Vector3 &p_viewer_position, int p_stop_at_lod_level) {
+void TLODQuadTree::select_nodes(const Vector3 &p_viewer_position, const TMinmaxMap &p_minmax_map, int p_stop_at_lod_level) {
     selection_count = 0;
     // TODO: Organize root nodes by lod range.
     // TODO: Load textures without frustum culling.
 
     for (uint16_t iz = 0; iz < info->root_nodes_count_z; ++iz) {
         for (uint16_t ix = 0; ix < info->root_nodes_count_x; ++ix) {
-            _lod_select(p_viewer_position, false, ix, iz, info->root_node_size, info->lod_levels - 1, 0);
+            _lod_select(p_viewer_position, p_minmax_map, false, ix, iz, info->root_node_size, info->lod_levels - 1, 0);
         }
     }
 
@@ -137,13 +137,14 @@ Transform3D TLODQuadTree::get_node_transform(const QTNode *p_node) const {
     return Transform3D(Basis(bx, by, bz), origin);
 }
 
-TLODQuadTree::NodeSelectionResult TLODQuadTree::_lod_select(const Vector3 &p_viewer_position, bool p_parent_inside_frustum, uint16_t p_x, uint16_t p_z, uint16_t p_size, int p_lod_level, int p_stop_at_lod_level) {
+TLODQuadTree::NodeSelectionResult TLODQuadTree::_lod_select(const Vector3 &p_viewer_position, const TMinmaxMap &p_minmax_map, bool p_parent_inside_frustum, uint16_t p_x, uint16_t p_z, uint16_t p_size, int p_lod_level, int p_stop_at_lod_level) {
     if (p_x * p_size >= world_size.x || p_z * p_size >= world_size.y) {
         return RESULT_OUT_OF_MAP;
     }
 
     uint16_t min_y = 0;
-    uint16_t max_y = 1; // TODO: Get minmax from heightmap data.
+    uint16_t max_y = 0;
+    p_minmax_map.get_minmax(p_x, p_z, p_lod_level, *world_info, min_y, max_y);
     AABB box = _get_node_AABB(p_x, p_z, min_y, max_y, p_size);
     real_t distance_limit = lod_visibility_range[p_lod_level];
 
@@ -171,13 +172,13 @@ TLODQuadTree::NodeSelectionResult TLODQuadTree::_lod_select(const Vector3 &p_vie
 
         if (t_aabb_intersects_sphere(box, p_viewer_position, next_distance_limit)) {
             bool completely_in_frustum = frustum_it == INSIDE;
-            res_subnode_tl = _lod_select(p_viewer_position, completely_in_frustum, x, z, half_size, next_lod, p_stop_at_lod_level);
+            res_subnode_tl = _lod_select(p_viewer_position, p_minmax_map, completely_in_frustum, x, z, half_size, next_lod, p_stop_at_lod_level);
             ERR_FAIL_COND_V(res_subnode_tl == RESULT_MAX_REACHED, RESULT_MAX_REACHED);
-            res_subnode_tr = _lod_select(p_viewer_position, completely_in_frustum, x + 1ui16, z, half_size, next_lod, p_stop_at_lod_level);
+            res_subnode_tr = _lod_select(p_viewer_position, p_minmax_map, completely_in_frustum, x + 1ui16, z, half_size, next_lod, p_stop_at_lod_level);
             ERR_FAIL_COND_V(res_subnode_tr == RESULT_MAX_REACHED, RESULT_MAX_REACHED);
-            res_subnode_bl = _lod_select(p_viewer_position, completely_in_frustum, x, z + 1ui16, half_size, next_lod, p_stop_at_lod_level);
+            res_subnode_bl = _lod_select(p_viewer_position, p_minmax_map, completely_in_frustum, x, z + 1ui16, half_size, next_lod, p_stop_at_lod_level);
             ERR_FAIL_COND_V(res_subnode_bl == RESULT_MAX_REACHED, RESULT_MAX_REACHED);
-            res_subnode_br = _lod_select(p_viewer_position, completely_in_frustum, x + 1ui16, z + 1ui16, half_size, next_lod, p_stop_at_lod_level);
+            res_subnode_br = _lod_select(p_viewer_position, p_minmax_map, completely_in_frustum, x + 1ui16, z + 1ui16, half_size, next_lod, p_stop_at_lod_level);
             ERR_FAIL_COND_V(res_subnode_br == RESULT_MAX_REACHED, RESULT_MAX_REACHED);
         } else {
             if (x * half_size >= world_size.x || z * half_size >= world_size.y) {
@@ -226,7 +227,7 @@ TLODQuadTree::NodeSelectionResult TLODQuadTree::_lod_select(const Vector3 &p_vie
 }
 
 AABB TLODQuadTree::_get_node_AABB(uint16_t p_x, uint16_t p_z, uint16_t min_y, uint16_t max_y, uint16_t p_size) const {
-    const Vector3 node_size = Vector3(p_size, max_y - min_y, p_size) * world_info->map_scale;
+    const Vector3 node_size = Vector3(p_size * world_info->chunk_size, max_y - min_y, p_size * world_info->chunk_size) * world_info->map_scale;
     const Vector3 node_position = Vector3(p_x * node_size.x, min_y * world_info->map_scale.y, p_z * node_size.z) + lod_offset;
     return AABB(node_position, node_size);
 }

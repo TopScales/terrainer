@@ -18,8 +18,6 @@
 class TMinmaxMap {
 
 private:
-    Vector<PackedByteArray> maps;
-
     struct MinMax {
         uint16_t min = 0;
         uint16_t max = 0;
@@ -35,13 +33,23 @@ private:
         }
     };
 
+    Vector<PackedByteArray> maps;
+    int minmax_saved_lods = 6;
+    int minmax_section_size = 0;
+
+
 public:
     void setup(const TTerrainInfo &p_info, const TWorldInfo &p_world_info);
-    void load_block(const Vector2i &p_block, const Ref<FileAccess> &p_file, const TWorldInfo &p_world_info, int p_max_lod);
-    void generate_remaining_lods(int p_from_lod, const TWorldInfo &p_world_info);
-    void get_minmax(uint16_t p_x, uint16_t p_z, int p_lod, const TWorldInfo &p_world_info, uint16_t &r_min, uint16_t &r_max);
+    void load_block(const Vector2i &p_block, const Ref<FileAccess> &p_file, const TWorldInfo &p_world_info);
+    void fill_block(const Vector2i &p_block, uint16_t p_value, const TWorldInfo &p_world_info);
+    void generate_remaining_lods(const TWorldInfo &p_world_info);
+    void get_minmax(uint16_t p_x, uint16_t p_z, int p_lod, const TWorldInfo &p_world_info, uint16_t &r_min, uint16_t &r_max) const;
     uint16_t get_chunk_min(uint16_t p_x, uint16_t p_z, const TWorldInfo &p_world_info);
     void clear();
+
+    void set_saved_lods(int p_lods);
+    int get_saved_lods() const;
+    int get_section_size() const;
 
     TMinmaxMap();
     ~TMinmaxMap();

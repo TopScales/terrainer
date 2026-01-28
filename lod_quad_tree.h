@@ -12,6 +12,7 @@
 #ifndef TERRAINER_QUAD_TREE_H
 #define TERRAINER_QUAD_TREE_H
 
+#include "map_storage/minmax_map.h"
 #include "terrain_info.h"
 
 #ifdef TERRAINER_MODULE
@@ -28,6 +29,8 @@
 class TLODQuadTree {
 
 public:
+    static const int MAX_NODE_SELECTION_COUNT = 4096;
+
     struct QTNode {
         uint16_t x = 0;
         uint16_t z = 0;
@@ -67,7 +70,6 @@ public:
 
 private:
     static const int MAX_LOD_LEVELS = 15;
-    static const int MAX_NODE_SELECTION_COUNT = 4096;
     static const int TL_BIT = 1 << 4;
     static const int TR_BIT = 1 << 5;
     static const int BL_BIT = 1 << 6;
@@ -97,19 +99,17 @@ private:
     QTNode selected_buffer[MAX_NODE_SELECTION_COUNT];
     Vector<real_t> lod_visibility_range;
     int selection_count = 0;
-    int min_selected_lod_level = 0;
-    int max_selected_lod_level = 0;
     Vector<int> lods_count;
     Vector3 lod_offset;
     Vector2i world_size;
 
-    NodeSelectionResult _lod_select(const Vector3 &p_viewer_position, bool p_parent_inside_frustum, uint16_t p_x, uint16_t p_z, uint16_t p_size, int p_lod_level, int p_stop_at_lod_level);
+    NodeSelectionResult _lod_select(const Vector3 &p_viewer_position, const TMinmaxMap &p_minmax_map, bool p_parent_inside_frustum, uint16_t p_x, uint16_t p_z, uint16_t p_size, int p_lod_level, int p_stop_at_lod_level);
     _FORCE_INLINE_ AABB _get_node_AABB(uint16_t p_x, uint16_t p_z, uint16_t min_y, uint16_t max_y, uint16_t p_size) const;
     _FORCE_INLINE_ IntersectType _aabb_intersects_frustum(const AABB &p_aabb) const;
 
 public:
     void set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_radius);
-    void select_nodes(const Vector3 &p_viewer_position, int p_stop_at_lod_level = 0);
+    void select_nodes(const Vector3 &p_viewer_position, const TMinmaxMap &p_minmax_map, int p_stop_at_lod_level = 0);
     int get_selection_count() const;
     const QTNode *get_selected_node(int p_index) const;
     AABB get_selected_node_aabb(int p_index) const;

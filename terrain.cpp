@@ -52,9 +52,11 @@ void TTerrain::set_storage(const Ref<TMapStorage> &p_storage) {
 		world_info->map_scale = map_scale;
 		quad_tree->set_world_info(world_info);
 		_storage_changed();
+		storage_status = storage->load_headers();
 	} else {
 		world_info = nullptr;
 		quad_tree->set_world_info(nullptr);
+		storage_status = ERR_FILE_NOT_FOUND;
 	}
 }
 
@@ -184,6 +186,8 @@ void TTerrain::_notification(int p_what) {
 }
 
 void TTerrain::_bind_methods() {
+	ClassDB::bind_method(D_METHOD("set_storage", "storage"), &TTerrain::set_storage);
+	ClassDB::bind_method(D_METHOD("get_storage"), &TTerrain::get_storage);
 	ClassDB::bind_method(D_METHOD("set_map_scale", "scale"), &TTerrain::set_map_scale);
 	ClassDB::bind_method(D_METHOD("get_map_scale"), &TTerrain::get_map_scale);
 	ClassDB::bind_method(D_METHOD("set_material", "material"), &TTerrain::set_material);
@@ -200,6 +204,7 @@ void TTerrain::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_debug_nodes_aabb_enabled", "enabled"), &TTerrain::set_debug_nodes_aabb_enabled);
 	ClassDB::bind_method(D_METHOD("is_debug_nodes_aabb_enabled"), &TTerrain::is_debug_nodes_aabb_enabled);
 
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "storage", PROPERTY_HINT_RESOURCE_TYPE, "TMapStorage"), "set_storage", "get_storage");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "map_scale"), "set_map_scale", "get_map_scale");
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "material", PROPERTY_HINT_RESOURCE_TYPE, "ShaderMaterial"), "set_material", "get_material");
 
@@ -279,6 +284,10 @@ void TTerrain::_set_lod_levels() {
 		material->set_shader_parameter("morph_data", morph_texture);
 	}
 
+	if (storage_status == OK) {
+		storage->setup(info);
+	}
+
 	if (debug_nodes_aabb_enabled) {
 		_debug_nodes_aabb_set_colors();
 	}
@@ -302,7 +311,7 @@ void TTerrain::_update_viewer() {
 		}
 	}
 
-	if (!camera) {
+	if (!camera || storage_status != OK) {
 		dirty = false;
 		return;
 	}
@@ -327,34 +336,43 @@ void TTerrain::_update_viewer() {
 }
 
 void TTerrain::_update_chunks() {
-	quad_tree->select_nodes(viewer_transform.origin);
+	quad_tree->select_nodes(viewer_transform.origin, *storage->get_minmax_map());
 	RenderingServer *const rs = RenderingServer::get_singleton();
 	rs->multimesh_allocate_data(mm_chunks, quad_tree->get_selection_count(), RenderingServer::MULTIMESH_TRANSFORM_3D, true);
 	int lod_half = (info.lod_levels + 1) / 2;
+	int instance_index = 0;
 
 	for (int i = 0; i < quad_tree->get_selection_count(); ++i) {
 		const TLODQuadTree::QTNode *node = quad_tree->get_selected_node(i);
-		const Transform3D xform = quad_tree->get_node_transform(node);
-		rs->multimesh_instance_set_transform(mm_chunks, i, xform);
-		const int lod = node->get_lod_level();
-		int color_index = lod / 2 + lod_half * (lod % 2);
-		Color lod_color = Color::from_hsv((real_t)color_index / (real_t)info.lod_levels, 0.8, 0.9);
-		// const uint32_t flags = uint32_t(node->flags) << 24;
-		const uint32_t flags = uint32_t(node->flags) | (1 << 30);
-        float encoded_alpha;
-        std::memcpy(&encoded_alpha, &flags, sizeof(float));
-		Color color = Color(lod_color, encoded_alpha);
-		rs->multimesh_instance_set_color(mm_chunks, i, color);
+		int lod = node->get_lod_level();
+		int lod_diff = info.lod_levels - lod - 1;
+		int x = node->x >> lod_diff;
+		int z = node->z >> lod_diff;
+		Vector2i root_node = Vector2i(x, z);
+		int texture_layer = 0;
+		bool node_ready = storage->get_node_texture_layer(root_node, texture_layer);
+		int node_size = 1 << lod_diff;
+		Vector2i uv_shift = Vector2i(node->x - x * node_size, node->z - z * node_size);
+
+		if (node_ready) {
+			_configure_chunk_mesh(rs, node, instance_index);
+			instance_index++;
+		}
 	}
 
 	if (debug_nodes_aabb_enabled) {
 		_debug_nodes_aabb_draw();
 	}
 
+	rs->multimesh_set_visible_instances(mm_chunks, instance_index);
 	dirty = false;
 }
 
 void TTerrain::_create_mesh() {
+	if (!world_info) {
+		return;
+	}
+
 	const int num_points = world_info->chunk_size + 1;
 	PackedVector3Array vertices;
 	vertices.resize(num_points * num_points);
@@ -520,6 +538,20 @@ void TTerrain::_storage_changed() {
 	if (material.is_valid()) {
 		material->set_shader_parameter("grid_const", Vector2(0.5 * (real_t)world_info->chunk_size, 2.0 / (real_t)world_info->chunk_size));
 	}
+}
+
+void TTerrain::_configure_chunk_mesh(RenderingServer *p_rs, const TLODQuadTree::QTNode *p_node, int p_instance_index) {
+	const Transform3D xform = quad_tree->get_node_transform(p_node);
+	p_rs->multimesh_instance_set_transform(mm_chunks, p_instance_index, xform);
+	// const int lod = p_node->get_lod_level();
+	// int color_index = lod / 2 + lod_half * (lod % 2);
+	// Color lod_color = Color::from_hsv((real_t)color_index / (real_t)info.lod_levels, 0.8, 0.9);
+	// const uint32_t flags = uint32_t(node->flags) << 24;
+	// const uint32_t flags = uint32_t(node->flags) | (1 << 30);
+	// float encoded_alpha;
+	// std::memcpy(&encoded_alpha, &flags, sizeof(float));
+	// Color color = Color(lod_color, encoded_alpha);
+	// rs->multimesh_instance_set_color(mm_chunks, i, color);
 }
 
 void TTerrain::_debug_nodes_aabb_create() {
@@ -720,10 +752,14 @@ TTerrain::TTerrain() {
 	mm_instance = rs->instance_create();
 	rs->instance_set_base(mm_instance, mm_chunks);
 	set_notify_transform(true);
-	_set_update_distance_tolerance_squared();
 	set_process(true);
 	quad_tree = memnew(TLODQuadTree);
 	quad_tree->set_info(&info);
+
+	{
+		Ref<Image> node_image = Image::create_empty(TLODQuadTree::MAX_NODE_SELECTION_COUNT, 1, false, Image::FORMAT_RGF);
+		node_info = ImageTexture::create_from_image(node_image);
+	}
 
 // 	include.instantiate();
 // 	const String include_code = R"(
