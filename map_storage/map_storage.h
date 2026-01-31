@@ -1,162 +1,251 @@
 /**
  * map_storage.h
- * =============================================================================
- * Copyright (c) 2025 Rafael Martínez Gordillo and the Terrainer contributors.
+ * ==================================================================================
+ * Copyright (c) 2025-2026 Rafael Martínez Gordillo and the Terrainer contributors.
  *
  * Use of this source code is governed by an MIT-style
  * license that can be found in the LICENSE file or at
  * https://opensource.org/licenses/MIT.
- * =============================================================================
+ * ==================================================================================
  */
 
 #ifndef TERRAINER_MAP_STORAGE_H
 #define TERRAINER_MAP_STORAGE_H
 
+#include "chunked_pool.h"
+#include "core/io/dir_access.h"
 #include "core/io/file_access.h"
 #include "core/io/resource.h"
-#include "core/object/worker_thread_pool.h"
-#include "core/os/mutex.h"
-#include "minmax_map.h"
-#include "scene/resources/texture_rd.h"
+#include "queue.h"
+
+// #include "core/object/worker_thread_pool.h"
+// #include "core/os/mutex.h"
+// #include "minmax_map.h"
+// #include "scene/resources/texture_rd.h"
 // #include "servers/rendering/rendering_device_binds.h"
-#include "servers/rendering/rendering_server.h"
-#include "../terrain_info.h"
+// #include "servers/rendering/rendering_server.h"
+// #include "../terrain_info.h"
 
-class TMapStorage : public Resource {
-    GDCLASS(TMapStorage, Resource);
+using namespace rigtorp;
 
-public:
-    static const uint64_t HEADER_SIZE = 8;
-    enum SegmentSize : unsigned int {
-        SEGMENT_1B,
-		SEGMENT_1K,
-		SEGMENT_4K,
-		SEGMENT_32K,
-		SEGMENT_MAX
-	};
+namespace Terrainer {
+
+class MapStorage : public Resource {
+    GDCLASS(MapStorage, Resource);
 
 private:
-    static const String DATA_FILE_EXT;
-    static const String DEFAULT_BLOCK_FILE_NAME;
-    static const uint8_t FORMAT_VERSION = 1;
-    static const uint32_t MAX_BLOCK_CELLS = 1 << 14;
-    static const uint32_t SEGMENTS[4];
-    static const uint32_t FLAG_HEIGHTMAP = 0x0010;
-    static const uint32_t FLAG_SPLAT_MAP = 0x0020;
-    static const uint32_t FLAG_METADATA = 0x0040;
-    static const uint32_t SHIFT_MAX_LOD = 8;
-    static const uint32_t SHIFT_MAX_MINMAX_LOD = 12;
-    static const uint32_t MASK_MAX_LOD = 0x000F;
-    static const int HEIGHTMAP_DATA_BYTES = 2;
-    static const int EXTRA_BUFFER_LAYERS = 4;
-    static const int UNLOAD_FRAME_TOLERANCE = 100;
+    static const String REGION_FILE_BASE_NAME;
+    static const String REGION_FILE_EXTENSION;
+    static const String REGION_FILE_FORMAT;
 
-    struct Block {
-        Vector2i position;
-        uint8_t version = 0;
-        uint16_t format = 0;
-        uint16_t splat_addr = 0;
-        uint16_t meta_addr = 0;
-        Ref<FileAccess> file;
-        PackedByteArray heightmap;
+    static const int HEADER_SIZE = 64;
+    static const int MAGIC_SIZE = 4;
+    static const char unsigned MAGIC_STRING[MAGIC_SIZE];
+    static const uint16_t FORMAT_VERSION = 1;
 
-        _FORCE_INLINE_ static uint16_t get_format(int p_lods, int p_minmax_lods, int p_segment, bool p_has_heightmap, bool p_has_splat_map, bool p_has_meta) {
-            return p_segment | (p_has_heightmap ? FLAG_HEIGHTMAP : 0) | (p_has_splat_map ? FLAG_SPLAT_MAP : 0) | (p_has_meta ? FLAG_METADATA : 0) |
-                (p_lods << SHIFT_MAX_LOD) | (p_minmax_lods << SHIFT_MAX_MINMAX_LOD);
-        };
-        _FORCE_INLINE_ static uint8_t format_to_segment_size(uint16_t p_format) { return p_format & 0x000F; };
-        _FORCE_INLINE_ bool has_heightmap() const { return format & FLAG_HEIGHTMAP; }
-        _FORCE_INLINE_ bool has_splat_map() const { return format & FLAG_SPLAT_MAP; }
-        _FORCE_INLINE_ bool has_metada() const { return format & FLAG_METADATA; }
-        _FORCE_INLINE_ uint8_t get_max_lod() const { return (format >> SHIFT_MAX_LOD) & MASK_MAX_LOD; }
-        _FORCE_INLINE_ uint8_t get_max_minmax_lod() const { return (format >> SHIFT_MAX_MINMAX_LOD) & MASK_MAX_LOD; }
-        _FORCE_INLINE_ uint8_t get_segment_size() const { return format_to_segment_size(format); }
+    static const uint8_t FORMAT_PACKED = 0x00;
+    static const uint8_t FORMAT_SPARSE = 0x10;
+    static const uint8_t FORMAT_PACKAGING_MASK = 0x10;
+    static const uint8_t FORMAT_SAVED_LODS_MASK = 0x0F;
 
-        void clear() {
-            file->close();
-            heightmap.clear();
-        }
+    static const uint8_t FORMAT_LITTLE_ENDIAN = 0x11;
+    static const uint8_t FORMAT_BIG_ENDIAN = 0x22;
 
-        Block(const Vector2i &p_pos, Ref<FileAccess> &p_file, uint8_t p_version, uint16_t p_format, uint16_t p_splat_addr, uint16_t p_meta_addr) :
-            position(p_pos), file(p_file), version(p_version), format(p_format), splat_addr(p_splat_addr), meta_addr(p_meta_addr) {}
-        Block(const Vector2i &p_pos, uint8_t p_version, uint16_t p_format, uint16_t p_splat_addr, uint16_t p_meta_addr) :
-            position(p_pos), version(p_version), format(p_format), splat_addr(p_splat_addr), meta_addr(p_meta_addr) {}
+    static constexpr uint32_t CHUNK_FLAG_HAS_MINMAX = 1 << 0;
+    static constexpr uint32_t CHUNK_FLAG_HAS_HEIGHT = 1 << 1;
+    static constexpr uint32_t CHUNK_FLAG_HAS_SPLAT = 1 << 2;
+    static constexpr uint32_t CHUNK_FLAG_HAS_META = 1 << 3;
+    static constexpr uint32_t CHUNK_FLAG_COMPRESSED_MINMAX = 1 << 4;
+    static constexpr uint32_t CHUNK_FLAG_COMPRESSED_HEIGHT = 1 << 5;
+    static constexpr uint32_t CHUNK_FLAG_COMPRESSED_SPLAT = 1 << 6;
+    static constexpr uint32_t CHUNK_FLAG_COMPRESSED_META = 1 << 7;
+
+    static const int MAX_QUEUE_SIZE = 32;
+    static const int MAX_POOL_SIZE = 32;
+
+    static constexpr uint32_t DATA_TYPE_MINMAX = 1 << 0;
+    static constexpr uint32_t DATA_TYPE_HEIGHT = 1 << 1;
+    static constexpr uint32_t DATA_TYPE_SPLAT = 1 << 2;
+    static constexpr uint32_t DATA_TYPE_META = 1 << 3;
+
+    enum class ChunkState : uint8_t {
+        Unloaded,
+        Requested,
+        IO_InFlight,
+        Decoding,
+        ReadyForUpload,
+        Resident,
+        Evicting
+    };
+    // TODO: Add HEIGHTMAP_LOADED state. // CPU-side data ready (physics/collision)
+
+    enum HeightFormat : uint32_t {
+        Unsigned16,
+        Signed16,
+        FloatingPoint16
     };
 
-    struct TextureData {
-        int layer = 0;
-        bool loaded = false;
-        int jobs = 0;
-        Mutex job_mutex;
-        Vector<Block *> blocks;
-        uint32_t frame = 0;
-        // TODO: Neigh info
+    enum SplatFormat : uint32_t {
+        RGBA8,
+        RGB16,
+        BC3,
+        BC7
     };
 
-    bool directory_use_custom = false;
+    struct alignas(HEADER_SIZE) Header {
+        char magic[MAGIC_SIZE];
+        uint8_t endianness;
+        uint8_t format;
+        uint16_t version;
+        uint32_t chunk_size;
+        uint32_t region_size;
+        uint32_t minmax_format;
+        uint32_t height_format;
+        uint32_t splat_format;
+        uint32_t directory_offset;
+        uint64_t data_offset;
+        // uint8_t reserved[24];
+
+        _FORCE_INLINE_ int lods() { return format & FORMAT_SAVED_LODS_MASK; }
+        _FORCE_INLINE_ bool is_packed() { return format & FORMAT_PACKAGING_MASK == FORMAT_PACKED; }
+    };
+    static_assert(sizeof(Header) == HEADER_SIZE);
+
+    union HeaderBytes {
+        uint8_t bytes[HEADER_SIZE];
+        Header value;
+    };
+
+    struct ChunkEntry {
+        uint32_t flags;
+        uint32_t minmax_size;
+        uint32_t height_size;
+        uint32_t splat_size;
+        uint32_t meta_size;
+        uint64_t minmax_offset;
+        uint64_t height_offset;
+        uint64_t splat_offset;
+        uint64_t meta_offset;
+    };
+    static_assert(sizeof(Header) == HEADER_SIZE);
+
+    // ChunkEntry (64 bytes per chunk)
+    // Offset	Size	Type	Name
+    // 0x00	4	int32	ChunkX
+    // 0x04	4	int32	ChunkY
+    // 0x08	8	uint64	HeightOffset
+    // 0x10	4	uint32	HeightSize
+    // 0x14	8	uint64	SplatOffset
+    // 0x1C	4	uint32	SplatSize
+    // 0x20	8	uint64	MetaOffset
+    // 0x28	4	uint32	MetaSize
+    // 0x2C	4	uint32	Flags
+    // 0x30	16	uint8[16]	Reserved
+
+
+    struct Region
+    {
+        Header *header;
+        Ref<FileAccess> query_access;
+        Ref<FileAccess> data_access;
+    };
+
+    struct IORequest {
+        Vector2i chunk;
+        uint64_t frame_id;
+        uint64_t request_id;
+        uint32_t data_type;
+        float priority;
+        uint8_t lod_level;
+    };
+
+    struct IOResult {
+        Vector2i chunk;
+
+        enum class DataType : uint8_t {
+            MINMAX,
+            HEIGHT,
+            SPLAT,
+            META,
+            HEIGHt_AND_SPLAT,
+            ALL_DATA
+        } data_type;
+
+        // Pointers to the loaded data (nullptr if not loaded).
+        uint8_t* heightmap;
+        uint8_t* splatmap;
+        uint8_t* metadata;
+
+        uint32_t heightmap_size;
+        uint32_t splatmap_size;
+        uint32_t metadata_size;
+
+        enum class Status : uint8_t {
+            SUCCESS,
+            IO_ERROR,            // Disk read failed
+            DECOMPRESSION_ERROR, // Corrupt data
+            CANCELLED,           // Request was cancelled mid-flight
+            OUT_OF_MEMORY        // Pool allocation failed
+        } status;
+
+        // Performance tracking.
+        uint64_t io_start_time;
+        uint64_t io_end_time;
+        uint32_t bytes_read_from_disk;  // Compressed size read
+
+        uint64_t request_id;
+
+        _FORCE_INLINE_ bool is_success() const { return status == Status::SUCCESS; }
+        _FORCE_INLINE_ bool has_heightmap() const { return heightmap != nullptr; }
+        _FORCE_INLINE_ bool has_splatmap() const { return splatmap != nullptr; }
+        uint64_t latency() const { return io_end_time - io_start_time; }
+    };
+
     String directory_path;
-    TWorldInfo world_info;
-    int max_saved_lods = -1;
-    int saved_lods = 10;
-    HashMap<Vector2i, Block*> blocks;
-    SegmentSize segment_size = SEGMENT_1K;
-    HashMap<Vector2i, TextureData*> texture_data_map;
-    int lod_levels = 1;
-    int num_layers = 0;
-    int used_layers = 0;
-    Vector<int> mipmaps_offset;
-    bool keep_data = false;
-    int num_layer_blocks = 0;
-    Mutex tex_data_mutex;
-    Mutex tasks_mutex;
-    HashSet<WorkerThreadPool::TaskID> tasks;
-    Ref<Texture2DArrayRD> heightmap_texture;
-    RID rd_heightmap_texture;
-    uint32_t frame = 0;
-    Vector<int> unused_layers;
+    int chunk_size = 32;
+    int region_size = 32;
+    bool size_locked = false;
+    bool data_locked = false;
 
-    TMinmaxMap minmax_map;
+    bool pools_ready = false;
 
-    void _select_segment_size();
-    void _set_saved_lods();
-    void _request_texture_layer(const Vector2i &p_node_pos, TextureData *p_texture_data);
-    void _load_block_data(const Vector2i &p_nopde_pos, int p_job_id);
-    void _create_textures(int p_layers, int p_width, int p_height, int p_mipmaps);
+    HashMap<Vector2i, Region*> regions;
+    SPSCQueue<IORequest> *io_queue = nullptr;
+    SPSCQueue<IOResult> *result_queue = nullptr;
+    ChunkedPool *height_pool = nullptr;
+    ChunkedPool *splat_pool = nullptr;
+
+    _FORCE_INLINE_ bool _is_format_correct(Ref<FileAccess> &p_file) const;
 
 protected:
-    void _notification(int p_what);
+    // void _notification(int p_what);
     bool _set(const StringName &p_name, const Variant &p_value);
 	bool _get(const StringName &p_name, Variant &r_ret) const;
     void _get_property_list(List<PropertyInfo> *p_list) const;
     static void _bind_methods();
 
 public:
+    static const StringName path_changed;
+
     Error load_headers();
-    void setup(const TTerrainInfo &p_info);
-    bool get_node_texture_layer(const Vector2i &p_node_pos, int &r_layer);
-    void load_from_buffer(const PackedByteArray &p_heightmap);
-    void arrange_layers();
     void clear();
 
-    void set_chunk_size(int p_size);
-    int get_chunk_size() const;
-    void set_block_size(int p_size);
-    int get_block_size() const;
-    void set_world_blocks(const Vector2i &p_blocks);
-    Vector2i get_world_blocks() const;
-    void set_max_saved_lods(int p_max_lods);
-    int get_max_saved_lods() const;
-    void set_directory_use_custom(bool p_use_custom);
-    bool is_directory_use_custom() const;
+    bool is_directory_set() const;
     void set_directory_path(String p_path);
     String get_directory_path() const;
-    Ref<Texture2DArrayRD> get_heightmap_texture() const;
+    void set_chunk_size(int p_size);
+    int get_chunk_size() const;
+    void set_region_size(int p_size);
+    int get_region_size() const;
+    void set_size_locked(bool p_locked);
+    bool is_size_locked() const;
+    void set_data_locked(bool p_locked);
+    bool is_data_locked() const;
 
-    TWorldInfo *get_world_info();
-    const TMinmaxMap *get_minmax_map() const;
-
-    TMapStorage();
-    ~TMapStorage();
+    MapStorage();
+    ~MapStorage();
 };
+
+} // namespace Terrainer
 
 #endif // TERRAINER_MAP_STORAGE_H

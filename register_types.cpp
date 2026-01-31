@@ -1,12 +1,12 @@
 /**
  * register_types.cpp
- * =============================================================================
- * Copyright (c) 2025 Rafael Martínez Gordillo and the Terrainer contributors.
+ * ==================================================================================
+ * Copyright (c) 2025-2026 Rafael Martínez Gordillo and the Terrainer contributors.
  *
  * Use of this source code is governed by an MIT-style
  * license that can be found in the LICENSE file or at
  * https://opensource.org/licenses/MIT.
- * =============================================================================
+ * ==================================================================================
  */
 
 #ifndef _3D_DISABLED
@@ -17,7 +17,7 @@
 #include "map_storage/map_storage.h"
 
 #ifdef TOOLS_ENABLED
-#include "editor/terrain_editor_plugin.h"
+// #include "editor/terrain_editor_plugin.h"
 #endif
 
 #ifdef TERRAINER_MODULE
@@ -32,17 +32,19 @@
 using namespace godot;
 #endif // TERRAINER_GDEXTENSION
 
+using namespace Terrainer;
+
 void initialize_terrainer_module(ModuleInitializationLevel p_level) {
 	if (p_level == MODULE_INITIALIZATION_LEVEL_SCENE) {
-		GDREGISTER_CLASS(TTerrain);
-		GDREGISTER_CLASS(TMapStorage);
+		GDREGISTER_CLASS(Terrain);
+		GDREGISTER_CLASS(MapStorage);
 	}
 #ifdef TOOLS_ENABLED
-	if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
-		GDREGISTER_CLASS(TerrainEditor);
-		GDREGISTER_CLASS(TerrainEditorPlugin);
-		EditorPlugins::add_by_type<TerrainEditorPlugin>();
-	}
+	// if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
+	// 	GDREGISTER_CLASS(TerrainEditor);
+	// 	GDREGISTER_CLASS(TerrainEditorPlugin);
+	// 	EditorPlugins::add_by_type<TerrainEditorPlugin>();
+	// }
 #endif
 }
 
