@@ -34,7 +34,7 @@ class Terrain : public Node3D {
     GDCLASS(Terrain, Node3D);
 
 private:
-    static const real_t UPDATE_TOLERANCE_FACTOR;
+    static constexpr real_t UPDATE_TOLERANCE_FACTOR = 0.05;
 //     static const int MAX_CHUNK_SIZE = 2048;
 
 //     static const int DIRTY_DATA = 1 << 1;

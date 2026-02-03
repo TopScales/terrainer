@@ -68,25 +68,11 @@ private:
         uint16_t max_y = 0;
         uint8_t flags = 0;
 
-        int get_lod_level() const {
-            return flags & LOD_MASK;
-        }
-
-        bool use_tl() const {
-            return flags & TL_BIT;
-        }
-
-        bool use_tr() const {
-            return flags & TL_BIT;
-        }
-
-        bool use_bl() const {
-            return flags & TL_BIT;
-        }
-
-        bool use_br() const {
-            return flags & TL_BIT;
-        }
+        _FORCE_INLINE_ int get_lod_level() const { return flags & LOD_MASK; }
+        _FORCE_INLINE_ bool use_tl() const { return flags & TL_BIT; }
+        _FORCE_INLINE_ bool use_tr() const { return flags & TL_BIT; }
+        _FORCE_INLINE_ bool use_bl() const { return flags & TL_BIT; }
+        _FORCE_INLINE_ bool use_br() const { return flags & TL_BIT; }
 
         QTNode() {};
 
@@ -101,20 +87,25 @@ private:
 
     int chunk_size = 0;
     int region_size = 0;
-    Vector2i world_size;
+    Vector2i world_size; // In number of chunks.
     Vector3 map_scale;
 
-    uint16_t root_node_size = 1;
-    uint16_t root_nodes_count_x = 1;
-    uint16_t root_nodes_count_z = 1;
+    uint16_t sector_size = 1; // In number of chunks.
+    uint16_t sector_count_x = 1;
+    uint16_t sector_count_z = 1;
     real_t lod_distance_ratio = 2.0;
 
     int lod_levels = 0;
     Vector<real_t> lod_visibility_range;
     int selection_count = 0;
     Vector<int> lods_count;
-    Vector3 lod_offset;
+    Vector3 world_offset;
 
+#ifdef TERRAINER_MODULE
+    Vector<Plane> frustum;
+#elif TERRAINER_GDEXTENSION
+    TypedArray<Plane> frustum;
+#endif
 //     NodeSelectionResult _lod_select(const Vector3 &p_viewer_position, const TMinmaxMap &p_minmax_map, bool p_parent_inside_frustum, uint16_t p_x, uint16_t p_z, uint16_t p_size, int p_lod_level, int p_stop_at_lod_level);
 //     _FORCE_INLINE_ AABB _get_node_AABB(uint16_t p_x, uint16_t p_z, uint16_t min_y, uint16_t max_y, uint16_t p_size) const;
 //     _FORCE_INLINE_ IntersectType _aabb_intersects_frustum(const AABB &p_aabb) const;
@@ -122,7 +113,7 @@ private:
 public:
     void set_map_info(int p_chunk_size, int p_region_size, const Vector2i p_world_regions, const Vector3 &p_map_scale);
     void set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_radius);
-//     void select_nodes(const Vector3 &p_viewer_position, const TMinmaxMap &p_minmax_map, int p_stop_at_lod_level = 0);
+    // void select_nodes(const Vector3 &p_viewer_position, const TMinmaxMap &p_minmax_map, int p_stop_at_lod_level = 0);
 //     const QTNode *get_selected_node(int p_index) const;
 //     AABB get_selected_node_aabb(int p_index) const;
 //     int get_selected_node_lod(int p_index) const;

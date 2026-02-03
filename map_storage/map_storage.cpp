@@ -16,12 +16,11 @@ using namespace Terrainer;
 const String MapStorage::REGION_FILE_BASE_NAME("region_");
 const String MapStorage::REGION_FILE_EXTENSION("bin");
 const String MapStorage::REGION_FILE_FORMAT(REGION_FILE_BASE_NAME + "%d_%d." + REGION_FILE_EXTENSION);
-const char unsigned MapStorage::MAGIC_STRING[4] = {'T', 'E', 'R', 'R'};
 const StringName MapStorage::path_changed = "path_changed";
 
 Error MapStorage::load_headers() {
     if (!DirAccess::exists(directory_path)) {
-        return;
+        return ERR_FILE_BAD_PATH;
     }
 
     Error error;
@@ -54,6 +53,7 @@ Error MapStorage::load_headers() {
                 Region *region = memnew(Region);
                 region->data_access = FileAccess::open(file_path, mode, &error);
                 ERR_CONTINUE_EDMSG(error != OK, vformat("Can`t open stream region data file %s.", file_path));
+                region->data_access->big_endian = file->big_endian;
                 region->header = &hb->value;
                 region->query_access = file;
                 regions[Vector2i(x, z)] = region;
@@ -125,6 +125,10 @@ void MapStorage::set_data_locked(bool p_locked) {
 
 bool MapStorage::is_data_locked() const {
     return data_locked;
+}
+
+void MapStorage::set_sector_size(int p_size) {
+    sector_size = p_size;
 }
 
 bool MapStorage::_set(const StringName &p_name, const Variant &p_value) {

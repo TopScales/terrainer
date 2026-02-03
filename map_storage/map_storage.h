@@ -40,7 +40,7 @@ private:
 
     static const int HEADER_SIZE = 64;
     static const int MAGIC_SIZE = 4;
-    static const char unsigned MAGIC_STRING[MAGIC_SIZE];
+    static constexpr char unsigned MAGIC_STRING[MAGIC_SIZE] = {'T', 'E', 'R', 'R'};
     static const uint16_t FORMAT_VERSION = 1;
 
     static const uint8_t FORMAT_PACKED = 0x00;
@@ -68,29 +68,29 @@ private:
     static constexpr uint32_t DATA_TYPE_SPLAT = 1 << 2;
     static constexpr uint32_t DATA_TYPE_META = 1 << 3;
 
-    enum class ChunkState : uint8_t {
-        Unloaded,
-        Requested,
-        IO_InFlight,
-        Decoding,
-        ReadyForUpload,
-        Resident,
-        Evicting
-    };
-    // TODO: Add HEIGHTMAP_LOADED state. // CPU-side data ready (physics/collision)
+    // enum class ChunkState : uint8_t {
+    //     Unloaded,
+    //     Requested,
+    //     IO_InFlight,
+    //     Decoding,
+    //     ReadyForUpload,
+    //     Resident,
+    //     Evicting
+    // };
+    // // TODO: Add HEIGHTMAP_LOADED state. // CPU-side data ready (physics/collision)
 
-    enum HeightFormat : uint32_t {
-        Unsigned16,
-        Signed16,
-        FloatingPoint16
-    };
+    // enum HeightFormat : uint32_t {
+    //     Unsigned16,
+    //     Signed16,
+    //     FloatingPoint16
+    // };
 
-    enum SplatFormat : uint32_t {
-        RGBA8,
-        RGB16,
-        BC3,
-        BC7
-    };
+    // enum SplatFormat : uint32_t {
+    //     RGBA8,
+    //     RGB16,
+    //     BC3,
+    //     BC7
+    // };
 
     struct alignas(HEADER_SIZE) Header {
         char magic[MAGIC_SIZE];
@@ -107,7 +107,7 @@ private:
         // uint8_t reserved[24];
 
         _FORCE_INLINE_ int lods() { return format & FORMAT_SAVED_LODS_MASK; }
-        _FORCE_INLINE_ bool is_packed() { return format & FORMAT_PACKAGING_MASK == FORMAT_PACKED; }
+        _FORCE_INLINE_ bool is_packed() { return (format & FORMAT_PACKAGING_MASK) == FORMAT_PACKED; }
     };
     static_assert(sizeof(Header) == HEADER_SIZE);
 
@@ -127,20 +127,6 @@ private:
         uint64_t splat_offset;
         uint64_t meta_offset;
     };
-    static_assert(sizeof(Header) == HEADER_SIZE);
-
-    // ChunkEntry (64 bytes per chunk)
-    // Offset	Size	Type	Name
-    // 0x00	4	int32	ChunkX
-    // 0x04	4	int32	ChunkY
-    // 0x08	8	uint64	HeightOffset
-    // 0x10	4	uint32	HeightSize
-    // 0x14	8	uint64	SplatOffset
-    // 0x1C	4	uint32	SplatSize
-    // 0x20	8	uint64	MetaOffset
-    // 0x28	4	uint32	MetaSize
-    // 0x2C	4	uint32	Flags
-    // 0x30	16	uint8[16]	Reserved
 
 
     struct Region
@@ -208,6 +194,7 @@ private:
     bool data_locked = false;
 
     bool pools_ready = false;
+    int sector_size = 0;
 
     HashMap<Vector2i, Region*> regions;
     SPSCQueue<IORequest> *io_queue = nullptr;
@@ -241,6 +228,7 @@ public:
     bool is_size_locked() const;
     void set_data_locked(bool p_locked);
     bool is_data_locked() const;
+    void set_sector_size(int p_size);
 
     MapStorage();
     ~MapStorage();

@@ -28,19 +28,19 @@ void LODQuadTree::set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_ra
     real_t radius0 = LOD0_RADIUS_FACTOR * p_lod_detailed_chunks_radius * chunk_size * MAX(map_scale.x, map_scale.z);
     real_t level_radius = radius0;
     real_t current_radius = 0.0;
-    root_node_size = 1;
+    sector_size = 1;
     int min_world_size = MIN(world_size.x, world_size.y);
 
-    while (current_radius + level_radius < p_far_view && root_node_size < min_world_size && lod_levels < MAX_LOD_LEVELS) {
+    while (current_radius + level_radius < p_far_view && sector_size < min_world_size && lod_levels <= MAX_LOD_LEVELS) {
         current_radius += level_radius;
         level_radius *= lod_distance_ratio;
-        root_node_size *= 2;
+        sector_size *= 2;
         lod_levels++;
     }
 
     if (current_radius + level_radius - p_far_view > 0.5 * level_radius) {
         lod_levels--;
-        root_node_size /= 2;
+        sector_size /= 2;
     }
 
     lod_visibility_range.resize(lod_levels);
@@ -54,12 +54,12 @@ void LODQuadTree::set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_ra
         current_radius += level_radius;
     }
 
-    root_nodes_count_x = Math::ceil((real_t)world_size.x / (real_t)root_node_size);
-    root_nodes_count_z = Math::ceil((real_t)world_size.y / (real_t)root_node_size);
+    sector_count_x = Math::ceil((real_t)world_size.x / (real_t)sector_size);
+    sector_count_z = Math::ceil((real_t)world_size.y / (real_t)sector_size);
     lods_count.resize(lod_levels);
     real_t offset_x = (real_t)(world_size.x / 2) * chunk_size * map_scale.x;
     real_t offset_z = (real_t)(world_size.y / 2) * chunk_size * map_scale.z;
-    lod_offset = Vector3(-offset_x, 0.0, -offset_z);
+    world_offset = Vector3(-offset_x, 0.0, -offset_z);
 }
 
 // void LODQuadTree::select_nodes(const Vector3 &p_viewer_position, const TMinmaxMap &p_minmax_map, int p_stop_at_lod_level) {

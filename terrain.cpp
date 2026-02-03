@@ -28,7 +28,6 @@
 
 using namespace Terrainer;
 
-const real_t Terrain::UPDATE_TOLERANCE_FACTOR = 0.05;
 // const real_t Terrain::DEBUG_AABB_LOD0_MARGIN = 2.0;
 // const real_t Terrain::DEBUG_AABB_MARGIN_LOD_SCALE_FACTOR = 0.5;
 
@@ -306,19 +305,38 @@ void Terrain::_update_viewer() {
 
 	if (dirty) {
 		viewer_transform = camera->get_global_transform();
-// 		info.frustum = camera->get_frustum();
+		quad_tree.frustum = camera->get_frustum();
 	} else {
-// 		Transform3D cam_xform = camera->get_global_transform();
+		Transform3D cam_xform = camera->get_global_transform();
 
-// 		if (cam_xform.origin.distance_squared_to(viewer_transform.origin) > update_distance_tolerance_squared || !cam_xform.basis.get_euler().is_equal_approx(viewer_transform.basis.get_euler())) {
-// 			viewer_transform = cam_xform;
-// 			info.frustum = camera->get_frustum();
-// 			dirty = true;
-// 		}
+		if (cam_xform.origin.distance_squared_to(viewer_transform.origin) > update_distance_tolerance_squared || !cam_xform.basis.get_euler().is_equal_approx(viewer_transform.basis.get_euler())) {
+			viewer_transform = cam_xform;
+			quad_tree.frustum = camera->get_frustum();
+			dirty = true;
+		}
 	}
 }
 
-// void Terrain::_update_chunks() {
+void Terrain::_update_chunks() {
+	int sector_size = quad_tree.sector_size * storage->get_chunk_size();
+	float sector_size_x = sector_size * map_scale.x;
+	float sector_size_z = sector_size * map_scale.z;
+	Vector3 viewer_position = viewer_transform.origin;
+	real_t far_squared = far_view * far_view;
+
+	for (int iz = 0; iz < quad_tree.sector_count_z; ++iz) {
+		for (int ix = 0; ix < quad_tree.sector_count_x; ++ix) {
+			Vector3 sector_pos = Vector3(sector_size_x * ix, 0.0, sector_size_z * iz) + quad_tree.world_offset;
+			real_t dx = sector_pos.x - viewer_position.x;
+			dx = MIN(abs(dx), abs(dx + sector_size_x));
+			real_t dz = sector_pos.z - viewer_position.z;
+			dz = MIN(abs(dz), abs(dx + sector_size_z));
+
+			if (dx * dx + dz * dz < far_squared) {
+			}
+		}
+	}
+
 // 	quad_tree->select_nodes(viewer_transform.origin, *storage->get_minmax_map());
 // 	RenderingServer *const rs = RenderingServer::get_singleton();
 // 	rs->multimesh_allocate_data(mm_chunks, quad_tree->get_selection_count(), RenderingServer::MULTIMESH_TRANSFORM_3D, true);
@@ -349,7 +367,7 @@ void Terrain::_update_viewer() {
 
 // 	rs->multimesh_set_visible_instances(mm_chunks, instance_index);
 // 	dirty = false;
-// }
+}
 
 void Terrain::_set_viewport_camera() {
 	Viewport *viewport = get_viewport();
@@ -434,6 +452,7 @@ void Terrain::_set_lod_levels() {
 	}
 
 	quad_tree.set_lod_levels(camera->get_far(), lod_detailed_chunks_radius);
+	storage->set_sector_size(quad_tree.sector_size);
 	dirty = true;
 
 // 	if (material.is_valid()) {
