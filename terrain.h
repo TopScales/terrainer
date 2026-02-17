@@ -35,7 +35,6 @@ class Terrain : public Node3D {
 
 private:
     static constexpr real_t UPDATE_TOLERANCE_FACTOR = 0.05;
-//     static const int MAX_CHUNK_SIZE = 2048;
 
 //     static const int DIRTY_DATA = 1 << 1;
 //     static const int DIRTY_CHUNKS = 1 << 2;
@@ -82,7 +81,7 @@ private:
     void _exit_world();
     void _update_visibility();
     void _update_transform();
-    void _update_viewer();
+    void _update_viewer(double p_delta);
     void _update_chunks();
 
     void _set_viewport_camera();
@@ -102,6 +101,7 @@ private:
 protected:
     void _notification(int p_what);
     static void _bind_methods();
+    PackedStringArray get_configuration_warnings() const override;
 
 public:
     void set_camera(Camera3D *p_camera);

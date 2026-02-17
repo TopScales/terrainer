@@ -31,7 +31,7 @@ void LODQuadTree::set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_ra
     sector_size = 1;
     int min_world_size = MIN(world_size.x, world_size.y);
 
-    while (current_radius + level_radius < p_far_view && sector_size < min_world_size && lod_levels <= MAX_LOD_LEVELS) {
+    while (current_radius + level_radius < p_far_view && sector_size < min_world_size && lod_levels <= MapStorage::MAX_LOD_LEVELS) {
         current_radius += level_radius;
         level_radius *= lod_distance_ratio;
         sector_size *= 2;

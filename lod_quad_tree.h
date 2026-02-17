@@ -12,7 +12,7 @@
 #ifndef TERRAINER_QUAD_TREE_H
 #define TERRAINER_QUAD_TREE_H
 
-// #include "map_storage/minmax_map.h"
+#include "map_storage/map_storage.h"
 // #include "terrain_info.h"
 
 #ifdef TERRAINER_MODULE
@@ -33,7 +33,7 @@ class LODQuadTree {
     friend class Terrain;
 
 private:
-    static const int MAX_LOD_LEVELS = 15;
+    // static const int MAX_LOD_LEVELS = 15;
     static const uint8_t LOD_MASK = 0x0F;
     static const uint8_t TL_BIT = 1 << 4;
     static const uint8_t TR_BIT = 1 << 5;

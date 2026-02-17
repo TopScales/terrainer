@@ -56,6 +56,8 @@ void Terrain::set_storage(const Ref<MapStorage> &p_storage) {
 	} else {
 		storage_status = ERR_CANT_ACQUIRE_RESOURCE;
 	}
+
+	update_configuration_warnings();
 }
 
 Ref<MapStorage> Terrain::get_storage() const {
@@ -186,8 +188,8 @@ void Terrain::_notification(int p_what) {
             }
 			_update_visibility();
 		} break;
-		case NOTIFICATION_PROCESS: {
-			_update_viewer();
+		case NOTIFICATION_INTERNAL_PROCESS: {
+			_update_viewer(get_process_delta_time());
 
 			if (dirty) {
 				_update_chunks();
@@ -230,7 +232,25 @@ void Terrain::_bind_methods() {
 // 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "debug_nodes_aabb_enabled"), "set_debug_nodes_aabb_enabled", "is_debug_nodes_aabb_enabled");
 }
 
+PackedStringArray Terrain::get_configuration_warnings() const {
+	PackedStringArray warnings = Node::get_configuration_warnings();
+
+	if (storage.is_null()) {
+		warnings.push_back(RTR("MapStorage resource is missing."));
+	} else if (!storage->is_directory_set()) {
+		warnings.push_back(RTR("Set a storage directory in the MapStorage resource."));
+	}
+
+	return warnings;
+}
+
 void Terrain::_enter_world() {
+	if (storage.is_null()) {
+		Ref<MapStorage> new_storage;
+		new_storage.instantiate();
+		set_storage(new_storage);
+	}
+
 	if (!Engine::get_singleton()->is_editor_hint()) {
 		_set_viewport_camera();
 	}
@@ -284,7 +304,7 @@ void Terrain::_update_transform() {
 // 	}
 }
 
-void Terrain::_update_viewer() {
+void Terrain::_update_viewer(double p_delta) {
 	if (!Engine::get_singleton()->is_editor_hint() && use_viewport_camera) {
 		Viewport *viewport = get_viewport();
 
@@ -303,6 +323,8 @@ void Terrain::_update_viewer() {
 		far_view = camera->get_far();
 	}
 
+	Vector3 prev_pos = viewer_transform.origin;
+
 	if (dirty) {
 		viewer_transform = camera->get_global_transform();
 		quad_tree.frustum = camera->get_frustum();
@@ -315,24 +337,35 @@ void Terrain::_update_viewer() {
 			dirty = true;
 		}
 	}
+
+	if (dirty) {
+		Vector3 pos = viewer_transform.origin;
+		Vector3 vel = pos.direction_to(prev_pos) / p_delta;
+		Vector3 forward = viewer_transform.basis.get_column(2);
+		storage->update_viewer(pos, vel, forward);
+	}
 }
 
 void Terrain::_update_chunks() {
-	int sector_size = quad_tree.sector_size * storage->get_chunk_size();
-	float sector_size_x = sector_size * map_scale.x;
-	float sector_size_z = sector_size * map_scale.z;
-	Vector3 viewer_position = viewer_transform.origin;
-	real_t far_squared = far_view * far_view;
+	const int sector_size = quad_tree.sector_size * storage->get_chunk_size();
+	const real_t sector_size_x = sector_size * map_scale.x;
+	const real_t sector_size_z = sector_size * map_scale.z;
+	const Vector3 viewer_position = viewer_transform.origin;
+	const real_t far_squared = far_view * far_view;
 
 	for (int iz = 0; iz < quad_tree.sector_count_z; ++iz) {
 		for (int ix = 0; ix < quad_tree.sector_count_x; ++ix) {
-			Vector3 sector_pos = Vector3(sector_size_x * ix, 0.0, sector_size_z * iz) + quad_tree.world_offset;
+			const Vector3 sector_pos = Vector3(sector_size_x * ix, 0.0, sector_size_z * iz) + quad_tree.world_offset;
 			real_t dx = sector_pos.x - viewer_position.x;
 			dx = MIN(abs(dx), abs(dx + sector_size_x));
 			real_t dz = sector_pos.z - viewer_position.z;
 			dz = MIN(abs(dz), abs(dx + sector_size_z));
 
 			if (dx * dx + dz * dz < far_squared) {
+				void* minmax_ptr = storage->get_sector_minmax_ptr(Vector2i(ix, iz));
+
+				if (minmax_ptr) {
+				}
 			}
 		}
 	}
@@ -452,7 +485,7 @@ void Terrain::_set_lod_levels() {
 	}
 
 	quad_tree.set_lod_levels(camera->get_far(), lod_detailed_chunks_radius);
-	storage->set_sector_size(quad_tree.sector_size);
+	storage->allocate_minmax(quad_tree.sector_size, quad_tree.lod_levels, world_regions, map_scale, far_view);
 	dirty = true;
 
 // 	if (material.is_valid()) {
@@ -488,6 +521,7 @@ void Terrain::_storage_changed() {
 void Terrain::_storage_path_changed() {
 	storage_status = storage->load_headers();
 	dirty = true;
+	update_configuration_warnings();
 }
 
 void Terrain::_set_update_distance_tolerance_squared() {
