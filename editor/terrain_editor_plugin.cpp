@@ -15,7 +15,7 @@
 #include <godot_cpp/classes/scene_tree.hpp>
 #endif // TERRAINER_GDEXTENSION
 
-// EditorPlugin::AfterGUIInput TerrainEditor::forward_spatial_input_event(Camera3D *p_camera, const Ref<InputEvent> &p_event) {
+EditorPlugin::AfterGUIInput TerrainEditor::forward_spatial_input_event(Camera3D *p_camera, const Ref<InputEvent> &p_event) {
 	// If the mouse is currently captured, we are most likely in freelook mode.
 	// In this case, disable shortcuts to avoid conflicts with freelook navigation.
 	// if (!node || Input::get_singleton()->get_mouse_mode() == Input::MOUSE_MODE_CAPTURED) {
@@ -223,8 +223,8 @@
 	// }
 	// accumulated_floor_delta = 0.0;
 
-// 	return EditorPlugin::AFTER_GUI_INPUT_PASS;
-// }
+	return EditorPlugin::AFTER_GUI_INPUT_PASS;
+}
 
 // void TerrainEditor::edit(TTerrain *p_terrain) {
 // 	node = p_terrain;
@@ -240,18 +240,18 @@
 
 // ******** TerrainEditorPlugin ********
 
-// #ifdef TERRAINER_MODULE
-// EditorPlugin::AfterGUIInput TerrainEditorPlugin::forward_3d_gui_input(Camera3D *p_camera, const Ref<InputEvent> &p_event) {
-// #endif // TERRAINER_MODULE
-// #ifdef TERRAINER_GDEXTENSION
-// int32_t TerrainEditorPlugin::_forward_3d_gui_input(Camera3D *p_camera, const Ref<InputEvent> &p_event) {
-// #endif // TERRAINER_GDEXTENSION
+#ifdef TERRAINER_MODULE
+EditorPlugin::AfterGUIInput TerrainEditorPlugin::forward_3d_gui_input(Camera3D *p_camera, const Ref<InputEvent> &p_event) {
+#endif // TERRAINER_MODULE
+#ifdef TERRAINER_GDEXTENSION
+int32_t TerrainEditorPlugin::_forward_3d_gui_input(Camera3D *p_camera, const Ref<InputEvent> &p_event) {
+#endif // TERRAINER_GDEXTENSION
 // 	for (TTerrain *terrain : nodes) {
 // 		terrain->set_camera(p_camera);
 // 	}
 
-// 	return terrain_editor->forward_spatial_input_event(p_camera, p_event);
-// }
+	return terrain_editor->forward_spatial_input_event(p_camera, p_event);
+}
 
 // #ifdef TERRAINER_MODULE
 // void TerrainEditorPlugin::edit(Object *p_object) {

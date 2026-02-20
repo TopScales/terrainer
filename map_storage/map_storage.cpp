@@ -172,7 +172,7 @@ void MapStorage::allocate_minmax(int p_sector_chunks, int p_lods, const Vector2i
 }
 
 int MapStorage::get_node_texture_layer(const NodeKey &p_key, int p_lod) {
-    HashMap<NodeKey, Tracker> &map = textures_trackers.get(p_lod);
+    HashMap<NodeKey, Tracker> &map = textures_trackers.write[p_lod];
     Tracker *tracker = map.getptr(p_key);
 
     if (tracker) {
@@ -368,12 +368,14 @@ void MapStorage::_clear() {
         memdelete(minmax_buffer);
     }
 
+    if (height_buffer) {
+        memdelete(height_buffer);
+    }
+
     minmax_trackers.clear();
 
     for (int i = 0; i < textures_trackers.size(); ++i) {
-        HashMap<NodeKey, Tracker> &map = textures_trackers.get(i);
-
-        for (KeyValue<NodeKey, Tracker> &kv : map) {
+        for (KeyValue<NodeKey, Tracker> &kv : textures_trackers.get(i)) {
             Tracker &tracker = kv.value;
             TextureData *td = (TextureData *)tracker.pointer;
             memdelete(td);
@@ -447,7 +449,7 @@ void MapStorage::_process_results() {
 
         if (result->data_type == DATA_TYPE_MINMAX) {
             minmax_mutex.lock();
-            Tracker &tracker = minmax_trackers.get(result->chunk);
+            Tracker &tracker = *minmax_trackers.getptr(result->chunk);
             tracker.pointer = result->pointer;
             minmax_mutex.unlock();
         }

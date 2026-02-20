@@ -51,7 +51,6 @@ public:
         constexpr CellKey() : key(0) {}
         constexpr CellKey(uint16_t p_x, uint16_t p_z) : cell({p_x, p_z}) {}
 
-        // constexpr CellKey operator=(CellKey p_k) { key = p_k.key; }
         constexpr CellKey operator+(CellKey p_k) const { return CellKey(cell.x + p_k.cell.x, cell.z + p_k.cell.z); }
         constexpr void operator+=(CellKey p_k) { cell.x += p_k.cell.x; cell.z += p_k.cell.z; }
         constexpr CellKey operator-(CellKey p_k) const { return CellKey(cell.x - p_k.cell.x, cell.z - p_k.cell.z); }
@@ -363,6 +362,7 @@ private:
     SafeFlag minmax_full;
     hmap_t default_height = 0;
 
+    BufferPool<hmap_t> *height_buffer = nullptr;
     Vector<HashMap<NodeKey, Tracker>> textures_trackers;
     Vector<int> unused_texture_layers;
     int num_layers = 0;
