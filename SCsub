@@ -9,8 +9,8 @@ env_terrainer = env_modules.Clone()
 env_terrainer.Append(CPPDEFINES=["TERRAINER_MODULE"])
 
 env_terrainer.add_source_files(env.modules_sources, "*.cpp")
-env_terrainer.add_source_files(env.modules_sources, "storage_stream/*.cpp")
-if env.editor_build:
-    env_terrainer.add_source_files(env.modules_sources, "editor/*.cpp")
+env_terrainer.add_source_files(env.modules_sources, "map_storage/*.cpp")
+# if env.editor_build:
+#     env_terrainer.add_source_files(env.modules_sources, "editor/*.cpp")
 
 # SConscript("shaders/SCsub")

@@ -7,7 +7,7 @@ def configure(env):
 
 
 def get_doc_classes():
-    return ["TTerrain"]
+    return ["Terrain"]
 
 
 def get_doc_path():

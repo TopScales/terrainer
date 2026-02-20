@@ -1,12 +1,12 @@
 /**
  * math.h
- * =============================================================================
- * Copyright (c) 2025 Rafael Martínez Gordillo and the Terrainer contributors.
+ * ==================================================================================
+ * Copyright (c) 2025-2026 Rafael Martínez Gordillo and the Terrainer contributors.
  *
  * Use of this source code is governed by an MIT-style
  * license that can be found in the LICENSE file or at
  * https://opensource.org/licenses/MIT.
- * =============================================================================
+ * ==================================================================================
  */
 
 #ifndef TERRAINER_MATH_H
@@ -22,11 +22,13 @@
 using namespace godot;
 #endif // TERRAINER_GDEXTENSION
 
-inline bool t_is_po2(unsigned int p_x) {
+namespace Terrainer {
+
+inline bool is_po2(unsigned int p_x) {
 	return (p_x & (p_x - 1)) == 0;
 }
 
-inline int t_round_po2(int p_in, int p_from) {
+inline int round_po2(int p_in, int p_from) {
     if (p_in > p_from) {
 		// Round up to next power of 2.
         int n = p_in - 1;
@@ -50,22 +52,7 @@ inline int t_round_po2(int p_in, int p_from) {
 	}
 }
 
-inline uint32_t t_log2i(const uint32_t p_x){
-	union { uint32_t u[2]; double d; } t;
-#ifdef BIG_ENDIAN_ENABLED
-	t.u[0] = 0x43300000;
-	t.u[1] = p_x;
-	t.d -= 4503599627370496.0;
-	return (t.u[0] >> 20) - 0x3FF;
-#else
-	t.u[1] = 0x43300000;
-	t.u[0] = p_x;
-	t.d -= 4503599627370496.0;
-	return (t.u[1] >> 20) - 0x3FF;
-#endif
-}
-
-static real_t t_aabb_min_distance_sqrd_from_point(const AABB &p_aabb, const Vector3 &p_point) {
+static real_t aabb_min_distance_sqrd_from_point(const AABB &p_aabb, const Vector3 &p_point) {
 	const Vector3 end = p_aabb.get_end();
 	real_t distance_sqrd = 0.0;
 
@@ -96,8 +83,12 @@ static real_t t_aabb_min_distance_sqrd_from_point(const AABB &p_aabb, const Vect
 	return distance_sqrd;
 }
 
-inline bool t_aabb_intersects_sphere(const AABB &p_aabb, const Vector3 &p_center, real_t p_radius) {
-	return t_aabb_min_distance_sqrd_from_point(p_aabb, p_center) <= p_radius * p_radius;
+inline bool aabb_intersects_sphere(const AABB &p_aabb, const Vector3 &p_center, real_t p_radius) {
+	return aabb_min_distance_sqrd_from_point(p_aabb, p_center) <= p_radius * p_radius;
+}
+
+inline int lod_expand(int p_size, int p_lods) {
+	return int(4.0 * p_size * (1.0 - 1.0 / float(1 << (2 * p_lods))) / 3.0);
 }
 
 #ifdef TERRAINER_MODULE
@@ -153,5 +144,7 @@ _ALWAYS_INLINE_ uint16_t make_half_float(float p_value) {
 
 #define MAKE_HALF_FLOAT(v) make_half_float(v)
 #endif
+
+} // namespace Terrainer
 
 #endif // TERRAINER_MATH_H
