@@ -51,7 +51,6 @@ public:
         constexpr CellKey() : key(0) {}
         constexpr CellKey(uint16_t p_x, uint16_t p_z) : cell({p_x, p_z}) {}
 
-        // constexpr CellKey operator=(CellKey p_k) { key = p_k.key; }
         constexpr CellKey operator+(CellKey p_k) const { return CellKey(cell.x + p_k.cell.x, cell.z + p_k.cell.z); }
         constexpr void operator+=(CellKey p_k) { cell.x += p_k.cell.x; cell.z += p_k.cell.z; }
         constexpr CellKey operator-(CellKey p_k) const { return CellKey(cell.x - p_k.cell.x, cell.z - p_k.cell.z); }
@@ -294,7 +293,7 @@ private:
 	};
 
     struct IOResult {
-        CellKey chunk;
+        NodeKey key;
         uint64_t request_id;
         uint16_t data_type;
         uint16_t lod_level;
@@ -314,8 +313,8 @@ private:
         uint64_t io_end_time;
         uint32_t bytes_read_from_disk;  // Compressed size read
 
-        IOResult(CellKey p_chunk, uint64_t p_request_id, uint16_t p_data_type, uint16_t p_lod):
-            chunk(p_chunk), request_id(p_request_id), data_type(p_data_type), lod_level(p_lod), pointer(nullptr), status(Status::UNKOWN) {}
+        IOResult(const NodeKey &p_key, uint64_t p_request_id, uint16_t p_data_type, uint16_t p_lod):
+            key(p_key), request_id(p_request_id), data_type(p_data_type), lod_level(p_lod), pointer(nullptr), status(Status::UNKOWN) {}
 
         _FORCE_INLINE_ bool is_success() const { return status == Status::SUCCESS; }
         _FORCE_INLINE_ uint64_t latency() const { return io_end_time - io_start_time; }
@@ -363,6 +362,7 @@ private:
     SafeFlag minmax_full;
     hmap_t default_height = 0;
 
+    BufferPool<hmap_t> *height_buffer = nullptr;
     Vector<HashMap<NodeKey, Tracker>> textures_trackers;
     Vector<int> unused_texture_layers;
     int num_layers = 0;
@@ -377,8 +377,8 @@ private:
     void _submit_requests();
     void _process_results();
     _FORCE_INLINE_ void _load_region_minmax(CellKey p_region_key, hmap_t *p_buffer, size_t p_size);
-    void _load_sector_minmax(CellKey p_sector, const IORequest &p_request, SPSCQueue<IOResult> *p_queue);
-    void _create_region(CellKey p_region_key, Region *r_region);
+    void _load_sector_minmax(const NodeKey &p_key, const IORequest &p_request, SPSCQueue<IOResult> *p_queue);
+    Region* _create_region(CellKey p_region_key);
     float _calc_request_priority(const Vector3 &p_chunk_pos, bool p_in_frustum);
     _FORCE_INLINE_ bool _is_format_correct(Ref<FileAccess> &p_file) const;
 
