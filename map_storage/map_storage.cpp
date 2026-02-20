@@ -393,7 +393,7 @@ void MapStorage::_process_requests(void *p_storage) {
             IORequest *request = storage->io_queue->front();
 
             if (request->data_type == DATA_TYPE_MINMAX) {
-                storage->_load_sector_minmax(request->key.sector, *request, storage->io_result);
+                storage->_load_sector_minmax(request->key, *request, storage->io_result);
             }
 
             storage->io_queue->pop();
@@ -449,7 +449,7 @@ void MapStorage::_process_results() {
 
         if (result->data_type == DATA_TYPE_MINMAX) {
             minmax_mutex.lock();
-            Tracker &tracker = *minmax_trackers.getptr(result->chunk);
+            Tracker &tracker = *minmax_trackers.getptr(result->key.sector);
             tracker.pointer = result->pointer;
             minmax_mutex.unlock();
         }
@@ -466,7 +466,7 @@ void MapStorage::_load_region_minmax(CellKey p_region_key, hmap_t *p_buffer, siz
     if (region_ptr) {
         region = *region_ptr;
     } else {
-        _create_region(p_region_key, region);
+        region = _create_region(p_region_key);
     }
 
     if (region->header->has_minmax()) {
@@ -484,10 +484,10 @@ void MapStorage::_load_region_minmax(CellKey p_region_key, hmap_t *p_buffer, siz
     }
 }
 
-void MapStorage::_load_sector_minmax(CellKey p_sector, const IORequest &p_request, SPSCQueue<IOResult> *p_queue) {
+void MapStorage::_load_sector_minmax(const NodeKey &p_key, const IORequest &p_request, SPSCQueue<IOResult> *p_queue) {
     if (sector_size < region_size) {
         const uint16_t region_sectors = region_size / sector_size;
-        const CellKey region_key = CellKey(p_sector.cell.x / region_sectors, p_sector.cell.z / region_sectors);
+        const CellKey region_key = CellKey(p_key.sector.cell.x / region_sectors, p_key.sector.cell.z / region_sectors);
         uint16_t *src = minmax_read.ptrw();
         _load_region_minmax(region_key, src, minmax_read.size());
 
@@ -505,7 +505,7 @@ void MapStorage::_load_sector_minmax(CellKey p_sector, const IORequest &p_reques
                 }
 
                 ERR_FAIL_NULL_EDMSG(sector_buffer, "Error allocating buffer to read minmax data.");
-                IOResult res = IOResult(sector_key, p_request.request_id, DATA_TYPE_MINMAX, 0);
+                IOResult res = IOResult({sector_key, CellKey()}, p_request.request_id, DATA_TYPE_MINMAX, 0);
                 res.pointer = sector_buffer;
                 int src_lod_offset = 0;
                 int src_block_size = 2 * region_size * region_size;
@@ -536,20 +536,20 @@ void MapStorage::_load_sector_minmax(CellKey p_sector, const IORequest &p_reques
         }
 
         ERR_FAIL_NULL_EDMSG(sector_buffer, "Error allocating buffer to read minmax data.");
-        IOResult res = IOResult(p_sector, p_request.request_id, DATA_TYPE_MINMAX, 0);
+        IOResult res = IOResult(p_key, p_request.request_id, DATA_TYPE_MINMAX, 0);
         res.pointer = sector_buffer;
 
         if (sector_size == region_size) {
-            _load_region_minmax(p_sector, sector_buffer, minmax_buffer->get_block_size());
+            _load_region_minmax(p_key.sector, sector_buffer, minmax_buffer->get_block_size());
         } else { // sector_size > region_size
             int sector_regions = sector_size / region_size;
             int num_lods = MIN(saved_lods, lods);
 
             for (int izr = 0; izr < sector_regions; ++izr) {
-                const int z_region = izr + p_sector.cell.z * sector_regions;
+                const int z_region = izr + p_key.sector.cell.z * sector_regions;
 
                 for (int ixr = 0; ixr < sector_regions; ++ixr) {
-                    const int x_region = ixr + p_sector.cell.x * sector_regions;
+                    const int x_region = ixr + p_key.sector.cell.x * sector_regions;
                     const CellKey region_key = CellKey(x_region, z_region);
                     uint16_t *data = minmax_read.ptrw();
                     _load_region_minmax(region_key, data, minmax_read.size());
@@ -605,13 +605,14 @@ void MapStorage::_load_sector_minmax(CellKey p_sector, const IORequest &p_reques
     }
 }
 
-void MapStorage::_create_region(CellKey p_region_key, Region *r_region) {
-    r_region = memnew(Region);
+MapStorage::Region *MapStorage::_create_region(CellKey p_region_key) {
+    Region *region = memnew(Region);
     Header *header = memnew(Header);
     memset(header, 0, HEADER_SIZE);
     header->version = FORMAT_VERSION;
-    r_region->header = header;
-    regions[p_region_key] = r_region;
+    region->header = header;
+    regions[p_region_key] = region;
+    return region;
 }
 
 float MapStorage::_calc_request_priority(const Vector3 &p_chunk_pos, bool p_in_frustum) {
