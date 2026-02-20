@@ -28,12 +28,15 @@
 
 namespace Terrainer {
 
+using CellKey = MapStorage::CellKey;
+using NodeKey = MapStorage::NodeKey;
+using hmap_t = MapStorage::hmap_t;
+
 class LODQuadTree {
 
     friend class Terrain;
 
 private:
-    // static const int MAX_LOD_LEVELS = 15;
     static const uint8_t LOD_MASK = 0x0F;
     static const uint8_t TL_BIT = 1 << 4;
     static const uint8_t TR_BIT = 1 << 5;
@@ -61,8 +64,7 @@ private:
     };
 
     struct QTNode {
-        uint16_t x = 0;
-        uint16_t z = 0;
+        NodeKey key;
         uint16_t size = 1;
         uint16_t min_y = 0;
         uint16_t max_y = 0;
@@ -74,11 +76,11 @@ private:
         _FORCE_INLINE_ bool use_bl() const { return flags & TL_BIT; }
         _FORCE_INLINE_ bool use_br() const { return flags & TL_BIT; }
 
-        QTNode() {};
+        QTNode() : key(CellKey(), CellKey()) {}
 
-        QTNode(int16_t p_x, int16_t p_z, uint16_t p_size, uint16_t p_min_y, uint16_t p_max_y, int p_lod_level, \
+        QTNode(NodeKey p_key, uint16_t p_size, uint16_t p_min_y, uint16_t p_max_y, int p_lod_level, \
             bool p_use_tl, bool p_use_tr, bool p_use_bl, bool p_use_br)
-        : x(p_x), z(p_z), size(p_size), min_y(p_min_y), max_y(p_max_y) {
+        : key(p_key), size(p_size), min_y(p_min_y), max_y(p_max_y) {
             flags = (p_lod_level & LOD_MASK) | (TL_BIT * p_use_tl) | (TR_BIT * p_use_tr) | (BL_BIT * p_use_bl) | (BR_BIT * p_use_br);
         }
     };
@@ -106,22 +108,23 @@ private:
 #elif TERRAINER_GDEXTENSION
     TypedArray<Plane> frustum;
 #endif
-//     NodeSelectionResult _lod_select(const Vector3 &p_viewer_position, const TMinmaxMap &p_minmax_map, bool p_parent_inside_frustum, uint16_t p_x, uint16_t p_z, uint16_t p_size, int p_lod_level, int p_stop_at_lod_level);
-//     _FORCE_INLINE_ AABB _get_node_AABB(uint16_t p_x, uint16_t p_z, uint16_t min_y, uint16_t max_y, uint16_t p_size) const;
-//     _FORCE_INLINE_ IntersectType _aabb_intersects_frustum(const AABB &p_aabb) const;
+    NodeSelectionResult _lod_select(const Vector3 &p_viewer_position, const Ref<MapStorage> &p_storage, bool p_parent_inside_frustum, const NodeKey &p_key, uint16_t p_size, int p_lod_level, int p_stop_at_lod_level);
+    _FORCE_INLINE_ AABB _get_node_AABB(const NodeKey &p_key, hmap_t min_y, hmap_t max_y, uint16_t p_size) const;
+    _FORCE_INLINE_ IntersectType _aabb_intersects_frustum(const AABB &p_aabb) const;
 
 public:
     void set_map_info(int p_chunk_size, int p_region_size, const Vector2i p_world_regions, const Vector3 &p_map_scale);
     void set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_radius);
-    // void select_nodes(const Vector3 &p_viewer_position, const TMinmaxMap &p_minmax_map, int p_stop_at_lod_level = 0);
-//     const QTNode *get_selected_node(int p_index) const;
+    NodeSelectionResult select_sector_nodes(const Vector3 &p_viewer_position, CellKey p_sector, const Ref<MapStorage> &p_storage, int p_stop_at_lod_level = 0);
+    void update_stats();
+    const QTNode *get_selected_node(int p_index) const;
 //     AABB get_selected_node_aabb(int p_index) const;
 //     int get_selected_node_lod(int p_index) const;
 //     void set_info(TTerrainInfo *p_info) { info = p_info; }
 //     void set_world_info(TWorldInfo *p_info) { world_info = p_info; }
     int get_lod_nodes_count(int p_level) const;
 //     Ref<ImageTexture> get_morph_texture(real_t p_morph_start_ratio = DEFAULT_MORPH_START_RATIO) const;
-//     Transform3D get_node_transform(const QTNode *p_node) const;
+    Transform3D get_node_transform(const QTNode *p_node) const;
 
     LODQuadTree();
     ~LODQuadTree();

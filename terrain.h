@@ -30,6 +30,8 @@
 
 namespace Terrainer {
 
+using CellKey = MapStorage::CellKey;
+
 class Terrain : public Node3D {
     GDCLASS(Terrain, Node3D);
 
@@ -39,8 +41,8 @@ private:
 //     static const int DIRTY_DATA = 1 << 1;
 //     static const int DIRTY_CHUNKS = 1 << 2;
 
-//     static const real_t DEBUG_AABB_LOD0_MARGIN;
-//     static const real_t DEBUG_AABB_MARGIN_LOD_SCALE_FACTOR;
+    static constexpr real_t DEBUG_AABB_LOD0_MARGIN = 2.0;
+    static constexpr real_t DEBUG_AABB_MARGIN_LOD_SCALE_FACTOR = 0.5;
 
 //     Ref<ShaderMaterial> material;
     Ref<MapStorage> storage;
@@ -66,16 +68,16 @@ private:
     real_t update_distance_tolerance_squared = 1.0;
 
 
-//     struct DebugAABB {
-//         RID shader;
-//         RID material;
-//         RID mesh;
-//         RID multimesh;
-//         RID instance;
-//         PackedColorArray lod_colors;
-//     } debug_aabb;
+    struct DebugAABB {
+        RID shader;
+        RID material;
+        RID mesh;
+        RID multimesh;
+        RID instance;
+        PackedColorArray lod_colors;
+    } debug_aabb;
 
-//     bool debug_nodes_aabb_enabled = false;
+    bool debug_nodes_aabb_enabled = false;
 
     void _enter_world();
     void _exit_world();
@@ -93,10 +95,10 @@ private:
 
 //     _FORCE_INLINE_ void _configure_chunk_mesh(RenderingServer *p_rs, const TLODQuadTree::QTNode *p_node, int p_instance_index);
 
-//     void _debug_nodes_aabb_create();
-//     void _debug_nodes_aabb_free();
-//     void _debug_nodes_aabb_draw() const;
-//     void _debug_nodes_aabb_set_colors();
+    void _debug_nodes_aabb_create();
+    void _debug_nodes_aabb_free();
+    void _debug_nodes_aabb_draw() const;
+    void _debug_nodes_aabb_set_colors();
 
 protected:
     void _notification(int p_what);
@@ -123,8 +125,8 @@ public:
     int info_get_lod_nodes_count(int p_level) const;
     int info_get_selected_nodes_count() const;
 
-//     void set_debug_nodes_aabb_enabled(bool p_enabled);
-//     bool is_debug_nodes_aabb_enabled() const;
+    void set_debug_nodes_aabb_enabled(bool p_enabled);
+    bool is_debug_nodes_aabb_enabled() const;
 
 	Terrain();
     ~Terrain();

@@ -41,21 +41,6 @@ private:
     std::atomic<size_t> allocated_count{0};
     std::atomic<size_t> peak_allocated{0};
 
-    struct Tracker {
-        int64_t frame;
-        Vector2i key;
-        void *pointer;
-        bool used;
-
-        Tracker() : frame(0), pointer(nullptr), used(false) {}
-        Tracker(void *p_pointer) : frame(0), pointer(p_pointer), used(false) {}
-    };
-
-    HashMap<void *, Tracker> trackers;
-    HashMap<Vector2i, Tracker> chunks;
-    Vector2i last_key;
-    bool full = false;
-
 public:
     BufferPool(size_t p_block_size, size_t p_block_count, size_t p_alignment = 64)
         : block_size(_align_up(p_block_size, p_alignment))
@@ -64,7 +49,6 @@ public:
     {
         total_size = block_size * block_count * sizeof(T);
         void *base;
-        trackers.reserve(p_block_count);
 
 #if defined(__ANDROID_API__) && (__ANDROID_API__ < 16)
         // Alignment must be >= sizeof(void*).
@@ -128,7 +112,7 @@ public:
     BufferPool(const BufferPool&) = delete;
     BufferPool& operator=(const BufferPool&) = delete;
 
-    T* allocate(uint64_t p_frame, const Vector2i &p_key) {
+    T* allocate() {
         FreeNode* old_head = free_list_head.load(std::memory_order_acquire);
 
         while (old_head != nullptr) {
@@ -146,32 +130,12 @@ public:
                     }
                 }
 
-                Tracker &tracker = trackers[old_head];
-                tracker.frame = p_frame;
-                tracker.key = p_key;
-                tracker.used = true;
-                chunks.insert(p_key, tracker);
                 return (T*)old_head;
             }
         }
 
         // Out of chunks!
-        full = true;
-        return _free_one();
-    }
-
-    void clean_by_key(const Vector2i &p_key, int p_radius) {
-        last_key = p_key;
-
-        for (KeyValue<void *, Tracker> &kv : trackers) {
-            if (kv.value.used) {
-                Vector2i key_diff = kv.value.key - last_key;
-
-                if (key_diff.x + key_diff.y >= p_radius) {
-                    free((T*)kv.key);
-                }
-            }
-        }
+        return nullptr;
     }
 
     // Free a chunk (thread-safe, lock-free)
@@ -188,8 +152,6 @@ public:
             node->next = old_head;
         } while (!free_list_head.compare_exchange_weak(old_head, node, std::memory_order_release, std::memory_order_acquire));
 
-        Tracker &tracker = trackers[p_ptr];
-        tracker.used = false;
         allocated_count.fetch_sub(1, std::memory_order_relaxed);
     }
 
@@ -199,9 +161,6 @@ public:
         uintptr_t base = reinterpret_cast<uintptr_t>(buffer);
         return addr >= base && addr < (base + total_size);
     }
-
-    void set_active_key(const Vector2i &p_key) { last_key = p_key; }
-    bool is_full() const { return full; };
 
     // Stats
     size_t get_allocated_count() const {
@@ -233,38 +192,10 @@ private:
             FreeNode* node = reinterpret_cast<FreeNode*>(block_ptr);
             node->next = (i + 1 < block_count) ? reinterpret_cast<FreeNode*>(block_ptr + block_size) : nullptr; // Check if this considers the size of the data elements
             block_ptr += block_size;
-            trackers.insert(node, Tracker(node));
         }
 
         // Head points to first block
         free_list_head.store(reinterpret_cast<FreeNode*>(buffer), std::memory_order_release);
-    }
-
-    T* _free_one() {
-        int64_t lower = INT64_MAX;
-        void *lower_ptr = nullptr;
-
-        for (KeyValue<void *, Tracker> &kv : trackers) {
-            Tracker &tracker = kv.value;
-
-            if (tracker.used) {
-                Vector2i key_diff = tracker.key - last_key;
-                int64_t priority = tracker.frame - key_diff.x - key_diff.y;
-
-                if (priority < lower) {
-                    lower = priority;
-                    lower_ptr = kv.key;
-                }
-            }
-        }
-
-        if (lower_ptr) {
-            T *ptr = (T*)lower_ptr;
-            free(ptr);
-            return ptr;
-        } else {
-            return nullptr;
-        }
     }
 
     static size_t _align_up(size_t size, size_t alignment) {

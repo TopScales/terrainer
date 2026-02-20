@@ -18,6 +18,8 @@
 #include "core/io/resource.h"
 #include "core/os/thread.h"
 #include "queue.h"
+#include "scene/resources/texture_rd.h"
+#include "servers/rendering/rendering_server.h"
 
 // #include "core/object/worker_thread_pool.h"
 // #include "core/os/mutex.h"
@@ -34,10 +36,67 @@ namespace Terrainer {
 class MapStorage : public Resource {
     GDCLASS(MapStorage, Resource);
 
-private:
+    friend class Terrain;
+
+public:
     typedef uint16_t hmap_t;
 
+    union CellKey {
+        struct {
+            uint16_t x;
+            uint16_t z;
+        } cell;
+        uint32_t key;
+
+        constexpr CellKey() : key(0) {}
+        constexpr CellKey(uint16_t p_x, uint16_t p_z) : cell({p_x, p_z}) {}
+
+        // constexpr CellKey operator=(CellKey p_k) { key = p_k.key; }
+        constexpr CellKey operator+(CellKey p_k) const { return CellKey(cell.x + p_k.cell.x, cell.z + p_k.cell.z); }
+        constexpr void operator+=(CellKey p_k) { cell.x += p_k.cell.x; cell.z += p_k.cell.z; }
+        constexpr CellKey operator-(CellKey p_k) const { return CellKey(cell.x - p_k.cell.x, cell.z - p_k.cell.z); }
+        constexpr void operator-=(CellKey p_k) { cell.x -= p_k.cell.x; cell.z -= p_k.cell.z; }
+        constexpr bool operator==(CellKey p_k) const { return key == p_k.key; }
+        constexpr bool operator!=(CellKey p_k) const { return key != p_k.key; }
+
+        _FORCE_INLINE_ Vector3 position(real_t p_scale_x, real_t p_scale_z) const {
+            return Vector3(cell.x * p_scale_x, 0.0, cell.z * p_scale_z);
+        }
+
+        uint32_t hash() const {
+            return hash_murmur3_one_32(key);
+	    }
+    };
+    static_assert(sizeof(CellKey) == 4);
+
+    struct NodeKey {
+        CellKey sector;
+        CellKey cell;
+
+        constexpr NodeKey() {}
+        constexpr NodeKey(CellKey p_sector, CellKey p_cell) : sector(p_sector), cell(p_cell) {}
+        constexpr bool operator==(const NodeKey &p_k) const { return sector == p_k.sector && cell == p_k.cell; }
+
+        _FORCE_INLINE_ Vector3 sector_position(real_t p_scale_x, real_t p_scale_z) const {
+            return sector.position(p_scale_x, p_scale_z);
+        }
+        _FORCE_INLINE_ Vector3 position(int p_sector_size, int p_lod, int p_num_lods, real_t p_scale_x, real_t p_scale_z) const {
+            int lod_shift = p_num_lods - p_lod - 1;
+            int cell_size = p_sector_size >> lod_shift;
+            return Vector3((sector.cell.x * p_sector_size + cell.cell.x * cell_size) * p_scale_x, 0.0, (sector.cell.z * p_sector_size + cell.cell.z * cell_size) * p_scale_x);
+        }
+
+        uint32_t hash() const {
+            uint32_t h = hash_murmur3_one_32(uint32_t(sector.key));
+            h = hash_murmur3_one_32(uint32_t(cell.key), h);
+            return hash_fmix32(h);
+        }
+    };
+    static_assert(sizeof(NodeKey) == 8);
+
+private:
     static constexpr uint16_t HMAP_HOLE_VALUE = UINT16_MAX;
+    static constexpr uint16_t HMAP_MAX = HMAP_HOLE_VALUE - 1;
 
     static const String REGION_FILE_BASE_NAME;
     static const String REGION_FILE_EXTENSION;
@@ -70,6 +129,7 @@ private:
     // static constexpr uint32_t CHUNK_FLAG_COMPRESSED_META = 1 << 7;
 
     static const int MAX_QUEUE_SIZE = 32;
+    static const int MAX_RES_QUEUE_SIZE = 128;
     // static const int MAX_POOL_SIZE = 32;
 
     static constexpr uint32_t DATA_TYPE_MINMAX = 1 << 0;
@@ -78,13 +138,16 @@ private:
     static constexpr uint32_t DATA_TYPE_META = 1 << 3;
 
     static const int MAX_CHUNK_SIZE = 2048;
+    static const int MAX_PROCESSED_RESULTS = 10;
 
     static constexpr float PRIORITY_DISTANCE_FACTOR = 100.0f;
     static constexpr float PRIORITY_DISTANCE_HALF_DECAY = 20.0f;
     static constexpr float PRIORITY_IN_FRUSTUM = 2.0f;
     static constexpr float PRIORITY_MINMAX = 10.0f;
-    static constexpr float PRIORITY_HEIGHT = 2.0f;
     static constexpr real_t PRIORITY_PREDICTION_DELTA_TIME = 2.0;
+
+    static const int INVALID_TEXTURE_LAYER = -1;
+    static const int EXTRA_BUFFER_LAYERS = 8;
 
     // enum class ChunkState : uint8_t {
     //     Unloaded,
@@ -190,79 +253,87 @@ private:
         Ref<FileAccess> data_access;
     };
 
+    struct Tracker {
+        void *pointer;
+        mutable uint64_t frame;
+        mutable bool in_frustum;
+
+        enum class Status : uint8_t {
+            UNINITIALIZED,
+            LOADING,
+            LOADED
+        } status;
+
+        Tracker() : frame(0), pointer(nullptr), status(Status::UNINITIALIZED), in_frustum(false) {}
+        Tracker(uint64_t p_frame, Status p_status, bool p_in_frustum) : frame(p_frame), pointer(nullptr), status(p_status), in_frustum(p_in_frustum) {}
+        _FORCE_INLINE_ bool is_loaded() const { return status == Status::LOADED; }
+        _FORCE_INLINE_ bool exists() const { return status != Status::UNINITIALIZED; }
+
+    };
+
+    const Tracker default_tracker;
+
     struct IORequest {
-        Vector2i chunk;
-        int64_t frame;
+        NodeKey key;
+        Tracker* tracker;
         uint64_t request_id;
         float priority;
         uint16_t data_type;
         uint16_t lod_level;
 
-        IORequest() : frame(0), request_id(0), priority(0.0f), data_type(0), lod_level(0) {}
-        IORequest(const Vector2i &p_chunk, int64_t p_frame, uint64_t p_request_id, uint16_t p_type, uint16_t p_lod) :
-            chunk(p_chunk), frame(p_frame), request_id(p_request_id), priority(0.0f), data_type(p_type), lod_level(p_lod) {}
-
-        bool operator<(const IORequest &other) const {
-            return priority > other.priority;
-        }
+        IORequest() : tracker(nullptr), request_id(0), priority(0.0f), data_type(0), lod_level(0) {}
+        IORequest(NodeKey p_key, Tracker *p_tracker, uint64_t p_request_id, uint16_t p_type, uint16_t p_lod) :
+            key(p_key), tracker(p_tracker), request_id(p_request_id), priority(0.0f), data_type(p_type), lod_level(p_lod) {}
     };
     static_assert(sizeof(IORequest) == 32);
 
     struct RequestCompare {
 		_FORCE_INLINE_ bool operator()(const IORequest &p_a, const IORequest &p_b) const {
-			return p_a.priority > p_b.priority;
+			return p_a.priority < p_b.priority;
 		}
 	};
 
-    // struct IOResult {
-    //     Vector2i chunk;
+    struct IOResult {
+        CellKey chunk;
+        uint64_t request_id;
+        uint16_t data_type;
+        uint16_t lod_level;
+        void *pointer;
 
-    //     enum class DataType : uint8_t {
-    //         MINMAX,
-    //         HEIGHT,
-    //         SPLAT,
-    //         META,
-    //         HEIGHt_AND_SPLAT,
-    //         ALL_DATA
-    //     } data_type;
+        enum class Status : uint8_t {
+            UNKOWN,
+            SUCCESS,
+            IO_ERROR,            // Disk read failed
+            DECOMPRESSION_ERROR, // Corrupt data
+            CANCELLED,           // Request was cancelled mid-flight
+            OUT_OF_MEMORY        // Pool allocation failed
+        } status;
 
-    //     // Pointers to the loaded data (nullptr if not loaded).
-    //     uint8_t* heightmap;
-    //     uint8_t* splatmap;
-    //     uint8_t* metadata;
+        // Performance tracking.
+        uint64_t io_start_time;
+        uint64_t io_end_time;
+        uint32_t bytes_read_from_disk;  // Compressed size read
 
-    //     uint32_t heightmap_size;
-    //     uint32_t splatmap_size;
-    //     uint32_t metadata_size;
+        IOResult(CellKey p_chunk, uint64_t p_request_id, uint16_t p_data_type, uint16_t p_lod):
+            chunk(p_chunk), request_id(p_request_id), data_type(p_data_type), lod_level(p_lod), pointer(nullptr), status(Status::UNKOWN) {}
 
-    //     enum class Status : uint8_t {
-    //         SUCCESS,
-    //         IO_ERROR,            // Disk read failed
-    //         DECOMPRESSION_ERROR, // Corrupt data
-    //         CANCELLED,           // Request was cancelled mid-flight
-    //         OUT_OF_MEMORY        // Pool allocation failed
-    //     } status;
+        _FORCE_INLINE_ bool is_success() const { return status == Status::SUCCESS; }
+        _FORCE_INLINE_ uint64_t latency() const { return io_end_time - io_start_time; }
+    };
 
-    //     // Performance tracking.
-    //     uint64_t io_start_time;
-    //     uint64_t io_end_time;
-    //     uint32_t bytes_read_from_disk;  // Compressed size read
-
-    //     uint64_t request_id;
-
-    //     _FORCE_INLINE_ bool is_success() const { return status == Status::SUCCESS; }
-    //     _FORCE_INLINE_ bool has_heightmap() const { return heightmap != nullptr; }
-    //     _FORCE_INLINE_ bool has_splatmap() const { return splatmap != nullptr; }
-    //     uint64_t latency() const { return io_end_time - io_start_time; }
-    // };
+    struct TextureData {
+        PackedByteArray height;
+        PackedByteArray splat;
+        int layer = INVALID_TEXTURE_LAYER;
+    };
 
     String directory_path;
-    int chunk_size = 32;
-    int region_size = 32;
+    uint16_t chunk_size = 32ui16;
+    uint16_t region_size = 32ui16;
     bool size_locked = false;
     bool data_locked = false;
 
-    int sector_size = 0; // In terms of chunks.
+    uint16_t sector_size = 0ui16; // In terms of chunks.
     int lods = 0;
     int saved_lods = 5; // log2(32)
 
@@ -271,8 +342,9 @@ private:
 
     Vector<IORequest> io_pending;
     SPSCQueue<IORequest> *io_queue = nullptr;
-    int64_t current_frame = 0;
-    int64_t cancelled_frame = 0;
+    SPSCQueue<IOResult> *io_result = nullptr;
+    uint64_t current_frame = 0;
+    uint64_t cancelled_frame = 0;
     uint64_t current_request = 0;
     Vector3 viewer_pos;
     Vector3 viewer_vel;
@@ -280,36 +352,44 @@ private:
     Vector3 predicted_viewer_pos;
     Vector3 map_scale;
 
-    HashMap<Vector2i, Region*> regions;
+    HashMap<CellKey, Region*> regions;
     Vector<size_t> minmax_lod_offsets;
-    HashMap<Vector2i, hmap_t*> sector_minmax;
     BufferPool<hmap_t> *minmax_buffer = nullptr;
+    HashMap<CellKey, Tracker> minmax_trackers;
+    Mutex minmax_mutex;
     Vector<hmap_t> minmax_read;
+    const mutable Tracker* cached_minmax_tracker = nullptr;
+    mutable CellKey cached_sector = CellKey(UINT16_MAX, UINT16_MAX);
+    SafeFlag minmax_full;
     hmap_t default_height = 0;
 
-    // SPSCQueue<IOResult> *result_queue = nullptr;
-    // ChunkedPool *height_pool = nullptr;
-    // ChunkedPool *splat_pool = nullptr;
-
-    // Vector2i chunk;
-    //     int64_t frame;
-    //     uint64_t request_id;
-    //     float priority;
-    //     uint16_t data_type;
-    //     uint16_t lod_level;
+    Vector<HashMap<NodeKey, Tracker>> textures_trackers;
+    Vector<int> unused_texture_layers;
+    int num_layers = 0;
+    int used_layers = 0;
+    int requested_layers = 0;
+    RID rd_heightmap_texture;
+    Ref<Texture2DArrayRD> heightmap_texture;
 
     void _clear();
     static void _process_requests(void *p_storage);
-    _FORCE_INLINE_ void _add_request(const Vector2i &p_chunk, uint16_t p_data_type, uint16_t p_lod);
+    _FORCE_INLINE_ void _add_request(const NodeKey &p_key, Tracker *p_tracker, uint16_t p_data_type, uint16_t p_lod);
     void _submit_requests();
-    _FORCE_INLINE_ void _load_region_minmax(const Vector2i &p_region_key, hmap_t *p_buffer, size_t p_size);
-    void _load_sector_minmax(const Vector2i &p_sector);
-    void _create_region(const Vector2i &p_region_key, Region *r_region);
+    void _process_results();
+    _FORCE_INLINE_ void _load_region_minmax(CellKey p_region_key, hmap_t *p_buffer, size_t p_size);
+    void _load_sector_minmax(CellKey p_sector, const IORequest &p_request, SPSCQueue<IOResult> *p_queue);
+    void _create_region(CellKey p_region_key, Region *r_region);
     float _calc_request_priority(const Vector3 &p_chunk_pos, bool p_in_frustum);
     _FORCE_INLINE_ bool _is_format_correct(Ref<FileAccess> &p_file) const;
 
+    hmap_t* _free_lru_minmax();
+    void _clean_minmax();
+    void _cache_minmax(CellKey p_sector) const;
+
+    void _allocate_textures();
+    int _next_layer();
+
 protected:
-    // void _notification(int p_what);
     bool _set(const StringName &p_name, const Variant &p_value);
 	bool _get(const StringName &p_name, Variant &r_ret) const;
     void _get_property_list(List<PropertyInfo> *p_list) const;
@@ -320,11 +400,16 @@ public:
     static const StringName path_changed;
 
     Error load_headers();
-    hmap_t* get_sector_minmax_ptr(const Vector2i &p_sector);
-    void get_minmax(uint16_t p_x, uint16_t p_z, int p_lod, uint16_t &r_min, uint16_t &r_max) const;
+    bool is_sector_loaded(CellKey p_sector) const;
+    void load_minmax(CellKey p_sector, bool p_in_frustum);
+    void get_minmax(const NodeKey &p_key, int p_lod, hmap_t &r_min, hmap_t &r_max, bool &r_has_data) const;
     void allocate_minmax(int p_sector_chunks, int p_lods, const Vector2i &p_world_regions, const Vector3 &p_map_scale, real_t p_far_view);
+
+    int get_node_texture_layer(const NodeKey &p_key, int p_lod);
+
     void update_viewer(const Vector3 &p_viewer_pos, const Vector3 &p_viewer_vel, const Vector3 &p_viewer_forward);
     void stop_io();
+    void process();
 
     bool is_directory_set() const;
     void set_directory_path(const String &p_path);
