@@ -83,6 +83,7 @@ void MapStorage::load_minmax(CellKey p_sector, bool p_in_frustum) {
         cached_minmax_tracker->in_frustum = p_in_frustum;
     } else {
         Tracker *tracker = nullptr;
+        MutexLock lock(minmax_mutex);
 
         if (sector_size < region_size) {
             uint16_t region_sectors = region_size / sector_size;
@@ -133,8 +134,14 @@ void MapStorage::allocate_minmax(int p_sector_chunks, int p_lods, const Vector2i
     const int sector_cells = sector_size * chunk_size;
     const real_t sector_world_size_x = sector_cells * map_scale.x;
     const real_t sector_world_size_z = sector_cells * map_scale.z;
-    const size_t blocks_x = Math::ceil(2.0 * p_far_view / sector_world_size_x) + 1;
-    const size_t blocks_z = Math::ceil(2.0 * p_far_view / sector_world_size_z) + 1;
+    size_t blocks_x = Math::ceil(2.0 * p_far_view / sector_world_size_x) + 1;
+    size_t blocks_z = Math::ceil(2.0 * p_far_view / sector_world_size_z) + 1;
+
+    if (sector_size < region_size) {
+        blocks_x = region_size * (size_t)Math::ceil(real_t(sector_size * blocks_x) / real_t(region_size)) / sector_size + 1;
+        blocks_z = region_size * (size_t)Math::ceil(real_t(sector_size * blocks_z) / real_t(region_size)) / sector_size + 1;
+    }
+
     const size_t block_count = blocks_x * blocks_z;
     minmax_lod_offsets.resize(lods);
     size_t block_size = 0;
@@ -161,7 +168,6 @@ void MapStorage::allocate_minmax(int p_sector_chunks, int p_lods, const Vector2i
     }
 
     if (!minmax_buffer) {
-        // TODO: If sector_size < region_size, take into account the extra space needed to allocate full regions.
         minmax_buffer = memnew(BufferPool<uint16_t>(block_size, block_count));
     }
 
@@ -315,6 +321,10 @@ bool MapStorage::_set(const StringName &p_name, const Variant &p_value) {
     return false;
 }
 
+int MapStorage::get_minmax_allocated_sectors() const {
+    return minmax_buffer ? minmax_buffer->get_block_count() / 2 : 0;
+}
+
 bool MapStorage::_get(const StringName &p_name, Variant &r_ret) const {
     String prop_name = p_name;
 
@@ -393,7 +403,7 @@ void MapStorage::_process_requests(void *p_storage) {
             IORequest *request = storage->io_queue->front();
 
             if (request->data_type == DATA_TYPE_MINMAX) {
-                storage->_load_sector_minmax(request->key, *request, storage->io_result);
+                storage->_load_sector_minmax(request->key, *request);
             }
 
             storage->io_queue->pop();
@@ -451,6 +461,7 @@ void MapStorage::_process_results() {
             minmax_mutex.lock();
             Tracker &tracker = *minmax_trackers.getptr(result->key.sector);
             tracker.pointer = result->pointer;
+            tracker.status = Tracker::Status::LOADED;
             minmax_mutex.unlock();
         }
 
@@ -484,7 +495,7 @@ void MapStorage::_load_region_minmax(CellKey p_region_key, hmap_t *p_buffer, siz
     }
 }
 
-void MapStorage::_load_sector_minmax(const NodeKey &p_key, const IORequest &p_request, SPSCQueue<IOResult> *p_queue) {
+void MapStorage::_load_sector_minmax(const NodeKey &p_key, const IORequest &p_request) {
     if (sector_size < region_size) {
         const uint16_t region_sectors = region_size / sector_size;
         const CellKey region_key = CellKey(p_key.sector.cell.x / region_sectors, p_key.sector.cell.z / region_sectors);
@@ -525,7 +536,7 @@ void MapStorage::_load_sector_minmax(const NodeKey &p_key, const IORequest &p_re
                 }
 
                 res.status = IOResult::Status::SUCCESS;
-                p_queue->push(res);
+                io_result->push(res);
             }
         }
     } else {
@@ -601,7 +612,7 @@ void MapStorage::_load_sector_minmax(const NodeKey &p_key, const IORequest &p_re
         }
 
         res.status = IOResult::Status::SUCCESS;
-        p_queue->push(res);
+        io_result->push(res);
     }
 }
 
@@ -679,7 +690,7 @@ MapStorage::hmap_t* MapStorage::_free_lru_minmax() {
     for (KeyValue<CellKey, Tracker> &kv : minmax_trackers) {
         Tracker &tracker = kv.value;
 
-        if (tracker.pointer && tracker.frame < lower) {
+        if (tracker.status == Tracker::Status::LOADED && tracker.frame < lower) {
             lower = tracker.frame;
             lower_ptr = tracker.pointer;
             lower_key = kv.key;

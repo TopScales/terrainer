@@ -377,7 +377,7 @@ private:
     void _submit_requests();
     void _process_results();
     _FORCE_INLINE_ void _load_region_minmax(CellKey p_region_key, hmap_t *p_buffer, size_t p_size);
-    void _load_sector_minmax(const NodeKey &p_key, const IORequest &p_request, SPSCQueue<IOResult> *p_queue);
+    void _load_sector_minmax(const NodeKey &p_key, const IORequest &p_request);
     Region* _create_region(CellKey p_region_key);
     float _calc_request_priority(const Vector3 &p_chunk_pos, bool p_in_frustum);
     _FORCE_INLINE_ bool _is_format_correct(Ref<FileAccess> &p_file) const;
@@ -423,6 +423,8 @@ public:
     void set_data_locked(bool p_locked);
     bool is_data_locked() const;
     void set_default_height(hmap_t p_height);
+
+    int get_minmax_allocated_sectors() const;
 
     MapStorage();
     ~MapStorage();
