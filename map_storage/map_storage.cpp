@@ -126,16 +126,23 @@ void MapStorage::get_minmax(const NodeKey &p_key, int p_lod, hmap_t &r_min, hmap
     r_has_data = cached_minmax_tracker->is_loaded();
 }
 
-void MapStorage::allocate_minmax(int p_sector_chunks, int p_lods, const Vector2i &p_world_regions, const Vector3 &p_map_scale, real_t p_far_view) {
+void MapStorage::allocate_buffers(int p_sector_chunks, int p_num_nodes, int p_lods, const Vector3 &p_map_scale, real_t p_far_view) {
     sector_size = p_sector_chunks;
     lods = p_lods;
     map_scale = p_map_scale;
     const int sector_cells = sector_size * chunk_size;
     const real_t sector_world_size_x = sector_cells * map_scale.x;
     const real_t sector_world_size_z = sector_cells * map_scale.z;
-    const size_t blocks_x = Math::ceil(2.0 * p_far_view / sector_world_size_x) + 1;
-    const size_t blocks_z = Math::ceil(2.0 * p_far_view / sector_world_size_z) + 1;
-    const size_t block_count = blocks_x * blocks_z;
+    size_t blocks_x = Math::ceil(2.0 * p_far_view / sector_world_size_x) + 1;
+    size_t blocks_z = Math::ceil(2.0 * p_far_view / sector_world_size_z) + 1;
+    minmax_radius = MAX(blocks_x * sector_world_size_x, blocks_z * sector_world_size_z);
+
+    if (sector_size < region_size) {
+        blocks_x = region_size * (size_t)Math::ceil(real_t(sector_size * blocks_x) / real_t(region_size)) / sector_size + 1;
+        blocks_z = region_size * (size_t)Math::ceil(real_t(sector_size * blocks_z) / real_t(region_size)) / sector_size + 1;
+    }
+
+    const size_t block_count = blocks_x * blocks_z * BUFFER_EXTRA_ALLOCATION_FACTOR;
     minmax_lod_offsets.resize(lods);
     size_t block_size = 0;
     size_t lod_block_size = 2 * sector_size * sector_size;
@@ -148,26 +155,37 @@ void MapStorage::allocate_minmax(int p_sector_chunks, int p_lods, const Vector2i
     }
 
     if (minmax_buffer) {
-        if (minmax_buffer->get_block_size() != block_size) {
-            if (minmax_buffer->get_block_count() != block_count) {
-                memdelete(minmax_buffer);
-                minmax_buffer = nullptr;
-            }
+        if (minmax_buffer->get_block_size() != block_size && !minmax_read.is_empty()) {
+            minmax_read.clear();
+        }
 
-            if (!minmax_read.is_empty()) {
-                minmax_read.clear();
-            }
+        if (minmax_buffer->get_block_size() != block_size || minmax_buffer->get_block_count() != block_count) {
+            memdelete(minmax_buffer);
+            minmax_buffer = nullptr;
         }
     }
 
     if (!minmax_buffer) {
-        // TODO: If sector_size < region_size, take into account the extra space needed to allocate full regions.
-        minmax_buffer = memnew(BufferPool<uint16_t>(block_size, block_count));
+        minmax_buffer = memnew(BufferPool<hmap_t>(block_size, block_count));
     }
+
 
     if (minmax_read.is_empty() && sector_size != region_size) {
         const int read_size = lod_expand(region_size, MIN(lods, saved_lods));
         minmax_read.resize(read_size);
+    }
+
+    textures_trackers.resize(lods);
+    size_t hmap_count = p_num_nodes * BUFFER_EXTRA_ALLOCATION_FACTOR;
+    size_t hmap_size = (chunk_size + 1) * (chunk_size + 1) + 4 * (chunk_size + 1);
+
+    if (hmap_buffer && hmap_buffer->get_block_count() != hmap_count) {
+        memdelete(hmap_buffer);
+        hmap_buffer = nullptr;
+    }
+
+    if (!hmap_buffer) {
+        hmap_buffer = memnew(BufferPool<hmap_t>(hmap_size, hmap_count));
     }
 }
 
@@ -219,12 +237,66 @@ void MapStorage::stop_io() {
 void MapStorage::process() {
     _submit_requests();
     _process_results();
-
-    if (minmax_full.is_set()) {
-        _clean_minmax();
-    }
+    _clean_minmax();
 
     current_frame++;
+}
+
+int MapStorage::get_buffer_stat(BufferType p_buffer, BufferStat p_stat) const {
+    switch (p_buffer) {
+    case BUFFER_MINMAX:
+        switch (p_stat) {
+            case STAT_ALLOCATED_COUNT:
+                return minmax_buffer->get_allocated_count();
+            case STAT_AVAILABLE_BLOCKS:
+                return minmax_buffer->get_available_blocks();
+            case STAT_AVAILABLE_BYTES:
+                return minmax_buffer->get_available_bytes();
+            case STAT_BLOCK_COUNT:
+                return minmax_buffer->get_block_count();
+            case STAT_BLOCK_SIZE:
+                return minmax_buffer->get_block_size();
+            case STAT_FREE_COUNT:
+                return minmax_buffer->get_free_count();
+            case STAT_PEAK_ALLOCATED:
+                return minmax_buffer->get_peak_allocated();
+            case STAT_TOTAL_ALLOCATIONS:
+                return minmax_buffer->get_total_allocations();
+            case STAT_TOTAL_DEALLOCATIONS:
+                return minmax_buffer->get_total_deallocations();
+            case STAT_UTILIZATION:
+                return (int)Math::round(100.0 * minmax_buffer->get_utilization());
+            default:
+                return -1;
+        }
+    case BUFFER_HMAP:
+        switch (p_stat) {
+            case STAT_ALLOCATED_COUNT:
+                return hmap_buffer->get_allocated_count();
+            case STAT_AVAILABLE_BLOCKS:
+                return hmap_buffer->get_available_blocks();
+            case STAT_AVAILABLE_BYTES:
+                return hmap_buffer->get_available_bytes();
+            case STAT_BLOCK_COUNT:
+                return hmap_buffer->get_block_count();
+            case STAT_BLOCK_SIZE:
+                return hmap_buffer->get_block_size();
+            case STAT_FREE_COUNT:
+                return hmap_buffer->get_free_count();
+            case STAT_PEAK_ALLOCATED:
+                return hmap_buffer->get_peak_allocated();
+            case STAT_TOTAL_ALLOCATIONS:
+                return hmap_buffer->get_total_allocations();
+            case STAT_TOTAL_DEALLOCATIONS:
+                return hmap_buffer->get_total_deallocations();
+            case STAT_UTILIZATION:
+                return (int)Math::round(100.0 * hmap_buffer->get_utilization());
+            default:
+                return -1;
+            }
+    default:
+        return -1;
+    }
 }
 
 bool MapStorage::is_directory_set() const {
@@ -315,6 +387,10 @@ bool MapStorage::_set(const StringName &p_name, const Variant &p_value) {
     return false;
 }
 
+int MapStorage::get_minmax_allocated_sectors() const {
+    return minmax_buffer ? minmax_buffer->get_block_count() / 2 : 0;
+}
+
 bool MapStorage::_get(const StringName &p_name, Variant &r_ret) const {
     String prop_name = p_name;
 
@@ -345,6 +421,7 @@ void MapStorage::_get_property_list(List<PropertyInfo> *p_list) const {
 
 
 void MapStorage::_bind_methods() {
+    ClassDB::bind_method(D_METHOD("get_buffer_stat", "buffer", "stat"), &MapStorage::get_buffer_stat);
     ClassDB::bind_method(D_METHOD("set_directory_path", "path"), &MapStorage::set_directory_path);
 	ClassDB::bind_method(D_METHOD("get_directory_path"), &MapStorage::get_directory_path);
     ClassDB::bind_method(D_METHOD("set_chunk_size", "size"), &MapStorage::set_chunk_size);
@@ -355,6 +432,20 @@ void MapStorage::_bind_methods() {
     ADD_PROPERTY(PropertyInfo(Variant::STRING, "directory_path", PROPERTY_HINT_DIR), "set_directory_path", "get_directory_path");
 
     ADD_SIGNAL(MethodInfo(path_changed));
+
+    BIND_ENUM_CONSTANT(BUFFER_MINMAX);
+    BIND_ENUM_CONSTANT(BUFFER_HMAP);
+
+    BIND_ENUM_CONSTANT(STAT_ALLOCATED_COUNT);
+    BIND_ENUM_CONSTANT(STAT_FREE_COUNT);
+    BIND_ENUM_CONSTANT(STAT_PEAK_ALLOCATED);
+    BIND_ENUM_CONSTANT(STAT_TOTAL_ALLOCATIONS);
+    BIND_ENUM_CONSTANT(STAT_TOTAL_DEALLOCATIONS);
+    BIND_ENUM_CONSTANT(STAT_UTILIZATION);
+    BIND_ENUM_CONSTANT(STAT_AVAILABLE_BLOCKS);
+    BIND_ENUM_CONSTANT(STAT_AVAILABLE_BYTES);
+    BIND_ENUM_CONSTANT(STAT_BLOCK_SIZE);
+    BIND_ENUM_CONSTANT(STAT_BLOCK_COUNT);
 }
 
 void MapStorage::_clear() {
@@ -368,8 +459,8 @@ void MapStorage::_clear() {
         memdelete(minmax_buffer);
     }
 
-    if (height_buffer) {
-        memdelete(height_buffer);
+    if (hmap_buffer) {
+        memdelete(hmap_buffer);
     }
 
     minmax_trackers.clear();
@@ -393,7 +484,7 @@ void MapStorage::_process_requests(void *p_storage) {
             IORequest *request = storage->io_queue->front();
 
             if (request->data_type == DATA_TYPE_MINMAX) {
-                storage->_load_sector_minmax(request->key, *request, storage->io_result);
+                storage->_load_sector_minmax(request->key, *request);
             }
 
             storage->io_queue->pop();
@@ -410,12 +501,14 @@ void MapStorage::_submit_requests() {
         return;
     }
 
+    const int sector_cells = sector_size * chunk_size;
+
     for (IORequest &request : io_pending) {
         if (request.data_type == DATA_TYPE_MINMAX) {
-            const Vector3 p = request.key.sector_position(sector_size * map_scale.x, sector_size * map_scale.z);
+            const Vector3 p = request.key.sector_position(sector_cells * map_scale.x, sector_cells * map_scale.z);
             request.priority = PRIORITY_MINMAX * _calc_request_priority(p, request.tracker->in_frustum);
         } else if (request.data_type & (DATA_TYPE_HEIGHT | DATA_TYPE_SPLAT)) {
-            const Vector3 p = request.key.position(sector_size, request.lod_level, lods, map_scale.x, map_scale.z);
+            const Vector3 p = request.key.position(sector_cells, request.lod_level, lods, map_scale.x, map_scale.z);
             request.priority = _calc_request_priority(p, request.tracker->in_frustum && (current_frame == request.tracker->frame)) + MAX_LOD_LEVELS - request.lod_level;
         }
     }
@@ -448,10 +541,11 @@ void MapStorage::_process_results() {
         IOResult *result = io_result->front();
 
         if (result->data_type == DATA_TYPE_MINMAX) {
-            minmax_mutex.lock();
+            // minmax_mutex.lock();
             Tracker &tracker = *minmax_trackers.getptr(result->key.sector);
             tracker.pointer = result->pointer;
-            minmax_mutex.unlock();
+            tracker.status = Tracker::Status::LOADED;
+            // minmax_mutex.unlock();
         }
 
         io_result->pop();
@@ -484,9 +578,21 @@ void MapStorage::_load_region_minmax(CellKey p_region_key, hmap_t *p_buffer, siz
     }
 }
 
-void MapStorage::_load_sector_minmax(const NodeKey &p_key, const IORequest &p_request, SPSCQueue<IOResult> *p_queue) {
+void MapStorage::_load_sector_minmax(const NodeKey &p_key, const IORequest &p_request) {
     if (sector_size < region_size) {
         const uint16_t region_sectors = region_size / sector_size;
+        Vector<hmap_t *> buffers;
+        buffers.resize(region_sectors * region_sectors);
+        size_t allocated_sectors = minmax_buffer->allocate_batch(buffers.ptrw(), region_sectors * region_sectors);
+
+        if (allocated_sectors != region_sectors * region_sectors) {
+            minmax_buffer->free_batch(buffers.ptrw(), allocated_sectors);
+            IOResult res = IOResult(p_key, p_request.request_id, DATA_TYPE_MINMAX, 0);
+            res.status = IOResult::Status::OUT_OF_MEMORY;
+            io_result->push(res);
+            return;
+        }
+
         const CellKey region_key = CellKey(p_key.sector.cell.x / region_sectors, p_key.sector.cell.z / region_sectors);
         uint16_t *src = minmax_read.ptrw();
         _load_region_minmax(region_key, src, minmax_read.size());
@@ -497,42 +603,42 @@ void MapStorage::_load_sector_minmax(const NodeKey &p_key, const IORequest &p_re
             for (int ixs = 0; ixs < region_sectors; ++ixs) {
                 const int x_sector = ixs + region_key.cell.x * region_sectors;
                 const CellKey sector_key = CellKey(x_sector, z_sector);
-                int write_size = 2 * sector_size;
-                hmap_t *sector_buffer = minmax_buffer->allocate();
-
-                if (!sector_buffer) {
-                    sector_buffer = _free_lru_minmax();
-                }
-
-                ERR_FAIL_NULL_EDMSG(sector_buffer, "Error allocating buffer to read minmax data.");
+                size_t write_size = 2 * sector_size * sizeof(hmap_t);
+                size_t rows = sector_size;
+                hmap_t *sector_buffer = buffers[ixs + izs * region_sectors];
                 IOResult res = IOResult({sector_key, CellKey()}, p_request.request_id, DATA_TYPE_MINMAX, 0);
                 res.pointer = sector_buffer;
-                int src_lod_offset = 0;
-                int src_block_size = 2 * region_size * region_size;
+                ptrdiff_t buffer_offset = 0;
+                ptrdiff_t src_lod_offset = 0;
+                ptrdiff_t src_block_size = 2 * region_size * region_size;
 
                 for (int ilod = 0; ilod < lods; ++ilod) {
-                    const int src_offset = src_lod_offset + ixs * write_size + izs * write_size * write_size * region_sectors;
+                    const ptrdiff_t src_offset = src_lod_offset + 2 * ixs * rows + 2 * izs * rows * rows * region_sectors;
 
-                    for (int iz = 0; iz < write_size; ++iz) {
-                        const int src_index = src_offset + iz * write_size * region_sectors;
-                        memcpy(sector_buffer, src + src_index, write_size);
-                        sector_buffer += write_size;
+                    for (int iz = 0; iz < rows; ++iz) {
+                        const ptrdiff_t src_index = src_offset + 2 * iz * rows * region_sectors;
+                        memcpy(sector_buffer + buffer_offset, src + src_index, write_size);
+                        buffer_offset += 2 * rows;
                     }
 
                     src_lod_offset += src_block_size;
                     src_block_size >>= 2;
                     write_size >>= 1;
+                    rows >>= 1;
                 }
 
                 res.status = IOResult::Status::SUCCESS;
-                p_queue->push(res);
+                io_result->push(res);
             }
         }
     } else {
         hmap_t *sector_buffer = minmax_buffer->allocate();
 
         if (!sector_buffer) {
-            sector_buffer = _free_lru_minmax();
+            IOResult res = IOResult(p_key, p_request.request_id, DATA_TYPE_MINMAX, 0);
+            res.status = IOResult::Status::OUT_OF_MEMORY;
+            io_result->push(res);
+            return;
         }
 
         ERR_FAIL_NULL_EDMSG(sector_buffer, "Error allocating buffer to read minmax data.");
@@ -560,7 +666,7 @@ void MapStorage::_load_sector_minmax(const NodeKey &p_key, const IORequest &p_re
                         const int region_offset = read_size * ixr + izr * read_size * read_size * sector_regions;
 
                         for (int iz = 0; iz < read_size; ++iz) {
-                            const int buffer_index = lod_offset + region_offset + iz * read_size * sector_regions;
+                            const ptrdiff_t buffer_index = lod_offset + region_offset + iz * read_size * sector_regions;
                             memcpy(sector_buffer + buffer_index, data, read_size);
                             data += read_size;
                         }
@@ -601,7 +707,7 @@ void MapStorage::_load_sector_minmax(const NodeKey &p_key, const IORequest &p_re
         }
 
         res.status = IOResult::Status::SUCCESS;
-        p_queue->push(res);
+        io_result->push(res);
     }
 }
 
@@ -664,61 +770,39 @@ bool MapStorage::_is_format_correct(Ref<FileAccess> &p_file) const {
     return true;
 }
 
-MapStorage::hmap_t* MapStorage::_free_lru_minmax() {
-    MutexLock lock(minmax_mutex);
-    hmap_t *buffer = minmax_buffer->allocate();
-
-    if (buffer) {
-        return buffer;
-    }
-
-    uint64_t lower = UINT64_MAX;
-    void *lower_ptr = nullptr;
-    CellKey lower_key;
-
-    for (KeyValue<CellKey, Tracker> &kv : minmax_trackers) {
-        Tracker &tracker = kv.value;
-
-        if (tracker.pointer && tracker.frame < lower) {
-            lower = tracker.frame;
-            lower_ptr = tracker.pointer;
-            lower_key = kv.key;
-        }
-    }
-
-    minmax_trackers.erase(lower_key);
-    minmax_buffer->free((hmap_t *)lower_ptr);
-    minmax_full.set();
-    return minmax_buffer->allocate();
-}
-
 void MapStorage::_clean_minmax() {
-    CellKey current_sector;
-    int radius = 10;
-    MutexLock lock(minmax_mutex);
+    if (minmax_buffer && minmax_buffer->get_utilization() > CLEANUP_BUFFER_UTILIZATION) {
+        const int sector_cells = sector_size * chunk_size;
+        const real_t sector_world_size_x = sector_cells * map_scale.x;
+        const real_t sector_world_size_z = sector_cells * map_scale.z;
+        const Vector3 offset = Vector3(sector_world_size_x * 0.5, 0.0, sector_world_size_z * 0.5);
+        const real_t r2 = minmax_radius * minmax_radius;
 
-    for (KeyValue<CellKey, Tracker> &kv : minmax_trackers) {
-        Tracker &tracker = kv.value;
+        for (KeyValue<CellKey, Tracker> &kv : minmax_trackers) {
+            Tracker &tracker = kv.value;
 
-        if (tracker.pointer) {
-            if (tracker.frame <= cancelled_frame) {
-                minmax_buffer->free((hmap_t *)tracker.pointer);
-            } else {
-                CellKey key_diff = kv.key - current_sector;
-
-                if (key_diff.cell.x + key_diff.cell.z > radius) {
+            if (tracker.is_loaded()) {
+                if (tracker.frame <= cancelled_frame) {
                     minmax_buffer->free((hmap_t *)tracker.pointer);
+                } else {
+                    const Vector3 p = kv.key.position(sector_world_size_x, sector_world_size_z) + offset;
+                    const Vector3 diff = p - viewer_pos;
+
+                    if (diff.x * diff.x + diff.z * diff.z > r2) {
+                        minmax_buffer->free((hmap_t *)tracker.pointer);
+                    }
                 }
             }
         }
-    }
 
-    minmax_full.clear();
+        if (minmax_buffer->get_utilization() > CLEANUP_BUFFER_UTILIZATION) {
+            ERR_PRINT_ED("Failed to free MinMax buffers.");
+        }
+    }
 }
 
 void MapStorage::_cache_minmax(CellKey p_sector) const {
     if (p_sector != cached_sector) {
-        MutexLock lock(minmax_mutex);
         cached_sector = p_sector;
         const Tracker *tracker = minmax_trackers.getptr(cached_sector);
 
@@ -770,7 +854,6 @@ int MapStorage::_next_layer() {
 MapStorage::MapStorage() {
     io_queue = memnew(SPSCQueue<IORequest>(MAX_QUEUE_SIZE));
     io_result = memnew(SPSCQueue<IOResult>(MAX_RES_QUEUE_SIZE));
-    minmax_full.clear();
 }
 
 MapStorage::~MapStorage() {

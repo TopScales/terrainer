@@ -323,11 +323,11 @@ void Terrain::_update_viewer(double p_delta) {
 	}
 
 	if (camera->get_far() != far_view) {
-		_set_lod_levels();
 		far_view = camera->get_far();
+		_set_lod_levels();
 	}
 
-	Vector3 prev_pos = viewer_transform.origin;
+	Vector3 prev_pos = viewer_transform.origin - quad_tree.world_offset;
 
 	if (dirty) {
 		viewer_transform = camera->get_global_transform();
@@ -343,7 +343,7 @@ void Terrain::_update_viewer(double p_delta) {
 	}
 
 	if (dirty) {
-		Vector3 pos = viewer_transform.origin;
+		Vector3 pos = viewer_transform.origin - quad_tree.world_offset;
 		Vector3 vel = pos.direction_to(prev_pos) / p_delta;
 		Vector3 forward = viewer_transform.basis.get_column(2);
 		storage->update_viewer(pos, vel, forward);
@@ -501,8 +501,8 @@ void Terrain::_set_lod_levels() {
 		return;
 	}
 
-	quad_tree.set_lod_levels(camera->get_far(), lod_detailed_chunks_radius);
-	storage->allocate_minmax(quad_tree.sector_size, quad_tree.lod_levels, world_regions, map_scale, far_view);
+	int num_nodes = quad_tree.set_lod_levels(far_view, lod_detailed_chunks_radius);
+	storage->allocate_buffers(quad_tree.sector_size, num_nodes, quad_tree.lod_levels, map_scale, far_view);
 	dirty = true;
 
 // 	if (material.is_valid()) {

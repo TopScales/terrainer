@@ -48,7 +48,7 @@ private:
     Ref<MapStorage> storage;
     Vector3 map_scale = Vector3(1.0, 1.0, 1.0);
     Vector2i world_regions = Vector2i(4, 4);
-    int lod_detailed_chunks_radius = 4;
+    int lod_detailed_chunks_radius = 2;
 
     bool mesh_valid = false;
     RID mesh;
