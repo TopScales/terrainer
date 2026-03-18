@@ -135,7 +135,7 @@ void MapStorage::allocate_buffers(int p_sector_chunks, int p_num_nodes, int p_lo
     const real_t sector_world_size_z = sector_cells * map_scale.z;
     size_t blocks_x = Math::ceil(2.0 * p_far_view / sector_world_size_x) + 1;
     size_t blocks_z = Math::ceil(2.0 * p_far_view / sector_world_size_z) + 1;
-    minmax_radius = MAX(blocks_x * sector_world_size_x, blocks_z * sector_world_size_z);
+    camera_far = p_far_view;
 
     if (sector_size < region_size) {
         blocks_x = region_size * (size_t)Math::ceil(real_t(sector_size * blocks_x) / real_t(region_size)) / sector_size + 1;
@@ -238,7 +238,6 @@ void MapStorage::process() {
     _submit_requests();
     _process_results();
     _clean_minmax();
-
     current_frame++;
 }
 
@@ -541,11 +540,9 @@ void MapStorage::_process_results() {
         IOResult *result = io_result->front();
 
         if (result->data_type == DATA_TYPE_MINMAX) {
-            // minmax_mutex.lock();
             Tracker &tracker = *minmax_trackers.getptr(result->key.sector);
             tracker.pointer = result->pointer;
             tracker.status = Tracker::Status::LOADED;
-            // minmax_mutex.unlock();
         }
 
         io_result->pop();
@@ -776,7 +773,7 @@ void MapStorage::_clean_minmax() {
         const real_t sector_world_size_x = sector_cells * map_scale.x;
         const real_t sector_world_size_z = sector_cells * map_scale.z;
         const Vector3 offset = Vector3(sector_world_size_x * 0.5, 0.0, sector_world_size_z * 0.5);
-        const real_t r2 = minmax_radius * minmax_radius;
+        const real_t r2 = camera_far * camera_far;
 
         for (KeyValue<CellKey, Tracker> &kv : minmax_trackers) {
             Tracker &tracker = kv.value;
@@ -851,9 +848,144 @@ int MapStorage::_next_layer() {
     }
 }
 
+void MapStorage::_clean_hmap() {
+    if (hmap_buffer && hmap_buffer->get_utilization() > CLEANUP_BUFFER_UTILIZATION) {
+        // const int sector_cells = sector_size * chunk_size;
+        // const real_t sector_world_size_x = sector_cells * map_scale.x;
+        // const real_t sector_world_size_z = sector_cells * map_scale.z;
+        // const Vector3 offset = Vector3(sector_world_size_x * 0.5, 0.0, sector_world_size_z * 0.5);
+        const real_t r2 = camera_far * camera_far;
+
+        // for (int i = 0; i < lods; ++i) {
+        //     HashMap<NodeKey, Tracker> &trackers = textures_trackers.get(i);
+
+        //     for (KeyValue<NodeKey, Tracker> &kv : trackers) {
+        //         Tracker &tracker = kv.value;
+        //         TextureData *td = (TextureData *)tracker.pointer;
+
+        //         // if (tracker.frame <= cancelled_frame) {
+        //         //     hmap_buffer->free((hmap_t *)tracker.pointer);
+        //         // }
+        //     }
+        // }
+
+        //     if (tracker.is_loaded()) {
+        //         if (tracker.frame <= cancelled_frame) {
+        //             minmax_buffer->free((hmap_t *)tracker.pointer);
+        //         } else {
+        //             const Vector3 p = kv.key.position(sector_world_size_x, sector_world_size_z) + offset;
+        //             const Vector3 diff = p - viewer_pos;
+
+        //             if (diff.x * diff.x + diff.z * diff.z > r2) {
+        //                 minmax_buffer->free((hmap_t *)tracker.pointer);
+        //             }
+        //         }
+        //     }
+
+        // if (minmax_buffer->get_utilization() > CLEANUP_BUFFER_UTILIZATION) {
+        //     ERR_PRINT_ED("Failed to free MinMax buffers.");
+        // }
+    }
+}
+
 MapStorage::MapStorage() {
     io_queue = memnew(SPSCQueue<IORequest>(MAX_QUEUE_SIZE));
     io_result = memnew(SPSCQueue<IOResult>(MAX_RES_QUEUE_SIZE));
+
+    const int npools = 512;
+    const int data_block_size = 64 * 16;
+    const int data_blocks = 64;
+    const int ncycles = 200;
+    Ref<FileAccess> file = FileAccess::open("res://file.data", FileAccess::READ);
+
+    {
+        Vector<uint8_t *> pool_ref;
+        pool_ref.resize(npools);
+        uint64_t t1 = OS::get_singleton()->get_ticks_usec();
+        BufferPool<uint8_t> *pool = memnew(BufferPool<uint8_t>(data_block_size, npools));
+        bool allocated = false;
+        Vector<PackedByteArray> data;
+        data.resize(npools);
+
+        for (int i = 0; i < npools; ++i) {
+            data.write[i].resize(data_block_size);
+        }
+
+        uint64_t t2 = OS::get_singleton()->get_ticks_usec();
+        int pool_index = 0;
+
+        for (int i = 0; i < ncycles; ++i) {
+            for (int ib = 0; ib < data_blocks; ++ib) {
+                if (allocated) {
+                    pool->free(pool_ref[pool_index]);
+                }
+
+                uint8_t *b = pool->allocate();
+
+                if (!b) {
+                    print_error("WTF!! No buffer");
+                    return;
+                }
+
+                int64_t len = file->get_buffer(b, data_block_size);
+                uint8_t *d = data.write[pool_index].ptrw();
+                memcpy(d, b, data_block_size);
+                pool_ref.set(pool_index, b);
+
+                if (pool_index >= npools - 1) {
+                    pool_index = 0;
+                    allocated = true;
+                } else {
+                    pool_index++;
+                }
+            }
+
+            file->seek(0);
+        }
+
+        uint64_t tf = OS::get_singleton()->get_ticks_usec();
+        print_line(vformat("[Section 1] T1: %d   |  T2: %d", tf - t1, tf - t2));
+        memdelete(pool);
+    }
+
+    file->seek(0);
+
+    {
+        Vector<PackedByteArray> buffers;
+        buffers.resize(npools);
+        uint64_t t1 = OS::get_singleton()->get_ticks_usec();
+
+        for (int i = 0; i < npools; ++i) {
+            buffers.write[i].resize(data_block_size);
+        }
+
+        uint64_t t2 = OS::get_singleton()->get_ticks_usec();
+        int pool_index = 0;
+
+        for (int i = 0; i < ncycles; ++i) {
+            for (int ib = 0; ib < data_blocks; ++ib) {
+                uint8_t *b = buffers.write[pool_index].ptrw();
+
+                if (!b) {
+                    print_error("WTF!! No array");
+                    return;
+                }
+
+                int64_t len = file->get_buffer(b, data_block_size);
+
+                if (pool_index >= npools - 1) {
+                    pool_index = 0;
+                } else {
+                    pool_index++;
+                }
+            }
+
+            file->seek(0);
+        }
+
+        uint64_t tf = OS::get_singleton()->get_ticks_usec();
+        print_line(vformat("[Section 2] T1: %d   |  T2: %d", tf - t1, tf - t2));
+    }
 }
 
 MapStorage::~MapStorage() {

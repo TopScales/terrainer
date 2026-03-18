@@ -113,7 +113,7 @@ public:
 
 private:
     static constexpr float CLEANUP_BUFFER_UTILIZATION = 0.8f;
-    static constexpr float BUFFER_EXTRA_ALLOCATION_FACTOR = 1.15f;
+    static constexpr float BUFFER_EXTRA_ALLOCATION_FACTOR = 1.25f;
 
     static constexpr uint16_t HMAP_HOLE_VALUE = UINT16_MAX;
     static constexpr uint16_t HMAP_MAX = HMAP_HOLE_VALUE - 1;
@@ -379,7 +379,7 @@ private:
     Vector<hmap_t> minmax_read;
     const mutable Tracker* cached_minmax_tracker = nullptr;
     mutable CellKey cached_sector = CellKey(UINT16_MAX, UINT16_MAX);
-    real_t minmax_radius = 0.0;
+    real_t camera_far = 0.0;
     hmap_t default_height = 0;
 
     BufferPool<hmap_t> *hmap_buffer = nullptr;
@@ -407,6 +407,7 @@ private:
 
     void _allocate_textures();
     int _next_layer();
+    void _clean_hmap();
 
 protected:
     bool _set(const StringName &p_name, const Variant &p_value);
