@@ -93,7 +93,28 @@ public:
     };
     static_assert(sizeof(NodeKey) == 8);
 
+    enum BufferType {
+        BUFFER_MINMAX,
+        BUFFER_HMAP
+    };
+
+    enum BufferStat {
+        STAT_ALLOCATED_COUNT,
+        STAT_FREE_COUNT,
+        STAT_PEAK_ALLOCATED,
+        STAT_TOTAL_ALLOCATIONS,
+        STAT_TOTAL_DEALLOCATIONS,
+        STAT_UTILIZATION,
+        STAT_AVAILABLE_BLOCKS,
+        STAT_AVAILABLE_BYTES,
+        STAT_BLOCK_SIZE,
+        STAT_BLOCK_COUNT
+    };
+
 private:
+    static constexpr float CLEANUP_BUFFER_UTILIZATION = 0.8f;
+    static constexpr float BUFFER_EXTRA_ALLOCATION_FACTOR = 1.15f;
+
     static constexpr uint16_t HMAP_HOLE_VALUE = UINT16_MAX;
     static constexpr uint16_t HMAP_MAX = HMAP_HOLE_VALUE - 1;
 
@@ -355,14 +376,13 @@ private:
     Vector<size_t> minmax_lod_offsets;
     BufferPool<hmap_t> *minmax_buffer = nullptr;
     HashMap<CellKey, Tracker> minmax_trackers;
-    Mutex minmax_mutex;
     Vector<hmap_t> minmax_read;
     const mutable Tracker* cached_minmax_tracker = nullptr;
     mutable CellKey cached_sector = CellKey(UINT16_MAX, UINT16_MAX);
-    SafeFlag minmax_full;
+    real_t minmax_radius = 0.0;
     hmap_t default_height = 0;
 
-    BufferPool<hmap_t> *height_buffer = nullptr;
+    BufferPool<hmap_t> *hmap_buffer = nullptr;
     Vector<HashMap<NodeKey, Tracker>> textures_trackers;
     Vector<int> unused_texture_layers;
     int num_layers = 0;
@@ -382,7 +402,6 @@ private:
     float _calc_request_priority(const Vector3 &p_chunk_pos, bool p_in_frustum);
     _FORCE_INLINE_ bool _is_format_correct(Ref<FileAccess> &p_file) const;
 
-    hmap_t* _free_lru_minmax();
     void _clean_minmax();
     void _cache_minmax(CellKey p_sector) const;
 
@@ -403,13 +422,15 @@ public:
     bool is_sector_loaded(CellKey p_sector) const;
     void load_minmax(CellKey p_sector, bool p_in_frustum);
     void get_minmax(const NodeKey &p_key, int p_lod, hmap_t &r_min, hmap_t &r_max, bool &r_has_data) const;
-    void allocate_minmax(int p_sector_chunks, int p_lods, const Vector2i &p_world_regions, const Vector3 &p_map_scale, real_t p_far_view);
+    void allocate_buffers(int p_sector_chunks, int p_num_nodes, int p_lods, const Vector3 &p_map_scale, real_t p_far_view);
 
     int get_node_texture_layer(const NodeKey &p_key, int p_lod);
 
     void update_viewer(const Vector3 &p_viewer_pos, const Vector3 &p_viewer_vel, const Vector3 &p_viewer_forward);
     void stop_io();
     void process();
+
+    int get_buffer_stat(BufferType p_buffer, BufferStat p_stat) const;
 
     bool is_directory_set() const;
     void set_directory_path(const String &p_path);
@@ -429,6 +450,9 @@ public:
     MapStorage();
     ~MapStorage();
 };
+
+VARIANT_ENUM_CAST(MapStorage::BufferType);
+VARIANT_ENUM_CAST(MapStorage::BufferStat);
 
 } // namespace Terrainer
 

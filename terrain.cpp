@@ -327,7 +327,7 @@ void Terrain::_update_viewer(double p_delta) {
 		_set_lod_levels();
 	}
 
-	Vector3 prev_pos = viewer_transform.origin;
+	Vector3 prev_pos = viewer_transform.origin - quad_tree.world_offset;
 
 	if (dirty) {
 		viewer_transform = camera->get_global_transform();
@@ -343,7 +343,7 @@ void Terrain::_update_viewer(double p_delta) {
 	}
 
 	if (dirty) {
-		Vector3 pos = viewer_transform.origin;
+		Vector3 pos = viewer_transform.origin - quad_tree.world_offset;
 		Vector3 vel = pos.direction_to(prev_pos) / p_delta;
 		Vector3 forward = viewer_transform.basis.get_column(2);
 		storage->update_viewer(pos, vel, forward);
@@ -357,7 +357,6 @@ void Terrain::_update_chunks() {
 	const Vector3 viewer_position = viewer_transform.origin;
 	const real_t far_squared = far_view * far_view;
 	quad_tree.selection_count = 0;
-	int debug_count = 0;
 
 	for (uint16_t iz = 0; iz < quad_tree.sector_count_z; ++iz) {
 		for (uint16_t ix = 0; ix < quad_tree.sector_count_x; ++ix) {
@@ -369,7 +368,6 @@ void Terrain::_update_chunks() {
 
 			if (dx * dx + dz * dz < far_squared) {
 				CellKey sector = {ix, iz};
-				debug_count++;
 
 				if (storage->is_sector_loaded(sector)) {
 					quad_tree.select_sector_nodes(viewer_transform.origin, sector, storage);
@@ -383,8 +381,6 @@ void Terrain::_update_chunks() {
 			}
 		}
 	}
-
-	print_line(vformat("Requested minmax: %d, allocated minmax: %d", debug_count, storage->get_minmax_allocated_sectors()));
 
 	dirty = false;
 
@@ -505,8 +501,8 @@ void Terrain::_set_lod_levels() {
 		return;
 	}
 
-	quad_tree.set_lod_levels(far_view, lod_detailed_chunks_radius);
-	storage->allocate_minmax(quad_tree.sector_size, quad_tree.lod_levels, world_regions, map_scale, far_view);
+	int num_nodes = quad_tree.set_lod_levels(far_view, lod_detailed_chunks_radius);
+	storage->allocate_buffers(quad_tree.sector_size, num_nodes, quad_tree.lod_levels, map_scale, far_view);
 	dirty = true;
 
 // 	if (material.is_valid()) {

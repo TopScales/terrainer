@@ -114,7 +114,7 @@ private:
 
 public:
     void set_map_info(int p_chunk_size, int p_region_size, const Vector2i p_world_regions, const Vector3 &p_map_scale);
-    void set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_radius);
+    int set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_radius);
     NodeSelectionResult select_sector_nodes(const Vector3 &p_viewer_position, CellKey p_sector, const Ref<MapStorage> &p_storage, int p_stop_at_lod_level = 0);
     void update_stats();
     const QTNode *get_selected_node(int p_index) const;
