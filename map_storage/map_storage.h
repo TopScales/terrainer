@@ -407,7 +407,7 @@ private:
 
     void _allocate_textures();
     int _next_layer();
-    void _clean_hmap();
+    // void _clean_hmap();
 
 protected:
     bool _set(const StringName &p_name, const Variant &p_value);
