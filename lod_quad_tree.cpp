@@ -36,7 +36,7 @@ int LODQuadTree::set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_rad
 
     while (next_radius < p_far_view && sector_size < min_world_size && lod_levels <= MapStorage::MAX_LOD_LEVELS) {
         int n = int(Math::ceil(2 * next_radius / node_size));
-        int inner = int(Math::floor(2 * current_radius / node_size));
+        int inner = int(2 * current_radius / node_size);
         num_nodes += n * n - inner * inner;
         current_radius = next_radius;
         level_radius *= lod_distance_ratio;
