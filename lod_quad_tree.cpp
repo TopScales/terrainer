@@ -52,16 +52,22 @@ int LODQuadTree::set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_rad
     }
 
     lod_visibility_range.resize(lod_levels);
-    lod_visibility_range.set(lod_levels - 1, p_far_view);
+    morph_start.resize(lod_levels);
     level_radius = radius0;
     current_radius = radius0;
+    real_t prev_range = 0.0;
 
     for (int i = 0; i < lod_levels - 1; ++i) {
         lod_visibility_range.set(i, current_radius);
+        real_t start = prev_range + (current_radius - prev_range) * morph_start_ratio;
+        morph_start.set(i, start);
+        prev_range = current_radius;
         level_radius *= lod_distance_ratio;
         current_radius += level_radius;
     }
 
+    lod_visibility_range.set(lod_levels - 1, current_radius);
+    morph_start.set(lod_levels - 1, current_radius);
     sector_count_x = Math::ceil((real_t)world_size.x / (real_t)sector_size);
     sector_count_z = Math::ceil((real_t)world_size.y / (real_t)sector_size);
     lods_count.resize(lod_levels);
@@ -144,27 +150,26 @@ int LODQuadTree::get_lod_nodes_count(int p_level) const {
     return lods_count[p_level];
 }
 
-// Ref<ImageTexture> LODQuadTree::get_morph_texture(real_t p_morph_start_ratio) const {
-//     PackedByteArray buffer;
-//     buffer.resize(4 * info->lod_levels);
-//     real_t prev_pos = 0.0;
-//     uint8_t *w = buffer.ptrw();
+Ref<ImageTexture> LODQuadTree::get_morph_texture() const {
+    PackedByteArray buffer;
+    buffer.resize(4 * lod_levels);
+    real_t prev_pos = 0.0;
+    uint8_t *w = buffer.ptrw();
 
-//     for (int i = 0; i < info->lod_levels; ++i) {
-//         float end = lod_visibility_range[i];
-//         float start = prev_pos + (end - prev_pos) * p_morph_start_ratio;
-//         float c1 = end / (end - start);
-//         float c2 = 1.0f / (end - start);
-//         int64_t index = 4 * i;
-// 		encode_uint16(MAKE_HALF_FLOAT(c1), &w[index]);
-//         encode_uint16(MAKE_HALF_FLOAT(c2), &w[index + 2]);
-//         prev_pos = end;
-//     }
+    for (int i = 0; i < lod_levels; ++i) {
+        float end = lod_visibility_range[i];
+        float start = morph_start[i];
+        float c1 = end / (end - start);
+        float c2 = 1.0f / (end - start);
+        int64_t index = 4 * i;
+		encode_uint16(MAKE_HALF_FLOAT(c1), &w[index]);
+        encode_uint16(MAKE_HALF_FLOAT(c2), &w[index + 2]);
+    }
 
-//     Ref<Image> image = Image::create_from_data(info->lod_levels, 1, false, Image::FORMAT_RGH, buffer);
-//     Ref<ImageTexture> texture = ImageTexture::create_from_image(image);
-//     return texture;
-// }
+    Ref<Image> image = Image::create_from_data(lod_levels, 1, false, Image::FORMAT_RGH, buffer);
+    Ref<ImageTexture> texture = ImageTexture::create_from_image(image);
+    return texture;
+}
 
 Transform3D LODQuadTree::get_node_transform(const QTNode *p_node) const {
     const Vector3 bx = Vector3(p_node->size * map_scale.x, 0.0, 0.0);
@@ -254,7 +259,10 @@ LODQuadTree::NodeSelectionResult LODQuadTree::_lod_select(const Vector3 &p_viewe
         }
 
         if (has_data) {
-            selected_buffer[selection_count] = QTNode(p_key, p_size, min_y, max_y, p_lod_level, !remove_subnode_tl, !remove_subnode_tr, !remove_subnode_bl, !remove_subnode_br);
+            real_t max_distance_sqrd = aabb_max_distance_sqrd_from_point(box, p_viewer_position);
+            bool node_morphs = max_distance_sqrd > morph_start[p_lod_level];
+            uint16_t flags = QTNode::get_flags(p_lod_level, !remove_subnode_tl, !remove_subnode_tr, !remove_subnode_bl, !remove_subnode_br, node_morphs, p_key.cell);
+            selected_buffer[selection_count] = QTNode(p_key, p_size, min_y, max_y, flags);
             selection_count++;
         }
 

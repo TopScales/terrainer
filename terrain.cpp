@@ -11,6 +11,7 @@
 
 #include "terrain.h"
 
+#include "utils/compat_marshalls.h"
 // #include "utils/macros.h"
 // #include "utils/math.h"
 
@@ -92,21 +93,62 @@ Vector2i Terrain::get_world_regions() const {
 	return world_regions;
 }
 
-// void Terrain::set_material(const Ref<ShaderMaterial> &p_material) {
-// 	material = p_material;
+void Terrain::set_material(const Ref<ShaderMaterial> &p_material) {
+	material = p_material;
 
-// 	if (mesh_valid) {
-// 		RenderingServer::get_singleton()->mesh_surface_set_material(mesh, 0, material->get_rid());
-// 	}
+	if (mesh_valid) {
+		RenderingServer::get_singleton()->mesh_surface_set_material(mesh, 0, material->get_rid());
+	}
 
-// 	if (material.is_valid() && world_info) {
-// 		material->set_shader_parameter("grid_const", Vector2(0.5 * (real_t)world_info->chunk_size, 2.0 / (real_t)world_info->chunk_size));
-// 	}
-// }
+	material_flags = 0;
 
-// Ref<ShaderMaterial> Terrain::get_material() const {
-// 	return material;
-// }
+	if (material.is_valid()) {
+		Ref<Shader> shader = material->get_shader();
+
+		if (shader.is_valid() && shader->get_mode() == Shader::MODE_SPATIAL) {
+			List<PropertyInfo> params;
+			shader->get_shader_uniform_list(&params);
+
+			for (PropertyInfo &pi : params) {
+				if (pi.name == "morph_data") {
+					if (pi.type == Variant::Type::OBJECT && pi.class_name == "Texture2D") {
+						material_flags |= SHADER_PARAM_MORPH_DATA;
+					}
+				} else if (pi.name == "grid_const") {
+					if (pi.type == Variant::Type::VECTOR2) {
+						material_flags |= SHADER_PARAM_GRID_CONST;
+					}
+				} else if (pi.name == "instance_data") {
+					if (pi.type == Variant::Type::OBJECT && pi.class_name == "Texture2D") {
+						material_flags |= SHADER_PARAM_INSTANCE_DATA;
+					}
+				} else if (pi.name == "hmap_array") {
+					if (pi.type == Variant::Type::OBJECT && pi.class_name == "Texture2DArray") {
+						material_flags |= SHADER_PARAM_HMAP_ARRAY;
+					}
+				} else if (pi.name == "normals_array") {
+					if (pi.type == Variant::Type::OBJECT && pi.class_name == "Texture2DArray") {
+						material_flags |= SHADER_PARAM_NORMALS_ARRAY;
+					}
+				}
+			}
+		}
+	}
+
+	if (material_flags & SHADER_PARAM_MORPH_DATA) {
+		Ref<ImageTexture> morph_texture = quad_tree.get_morph_texture();
+		material->set_shader_parameter("morph_data", morph_texture);
+	}
+
+	if ((material_flags & SHADER_PARAM_GRID_CONST) && storage_status == OK) {
+		Vector2 grid_const = Vector2(0.5 * (real_t)storage->chunk_size, 2.0 / (real_t)storage->chunk_size);
+		material->set_shader_parameter("grid_const", grid_const);
+	}
+}
+
+Ref<ShaderMaterial> Terrain::get_material() const {
+	return material;
+}
 
 void Terrain::set_lod_detailed_chunks_radius(int p_radius) {
 	lod_detailed_chunks_radius = p_radius;
@@ -209,8 +251,8 @@ void Terrain::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_map_scale"), &Terrain::get_map_scale);
 	ClassDB::bind_method(D_METHOD("set_world_regions", "regions"), &Terrain::set_world_regions);
 	ClassDB::bind_method(D_METHOD("get_world_regions"), &Terrain::get_world_regions);
-// 	ClassDB::bind_method(D_METHOD("set_material", "material"), &Terrain::set_material);
-// 	ClassDB::bind_method(D_METHOD("get_material"), &Terrain::get_material);
+	ClassDB::bind_method(D_METHOD("set_material", "material"), &Terrain::set_material);
+	ClassDB::bind_method(D_METHOD("get_material"), &Terrain::get_material);
 	ClassDB::bind_method(D_METHOD("set_lod_detailed_chunks_radius", "radius"), &Terrain::set_lod_detailed_chunks_radius);
 	ClassDB::bind_method(D_METHOD("get_lod_detailed_chunks_radius"), &Terrain::get_lod_detailed_chunks_radius);
 	ClassDB::bind_method(D_METHOD("set_lod_distance_ratio", "ratio"), &Terrain::set_lod_distance_ratio);
@@ -226,7 +268,7 @@ void Terrain::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "storage", PROPERTY_HINT_RESOURCE_TYPE, "MapStorage"), "set_storage", "get_storage");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "map_scale"), "set_map_scale", "get_map_scale");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "world_regions"), "set_world_regions", "get_world_regions");
-// 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "material", PROPERTY_HINT_RESOURCE_TYPE, "ShaderMaterial"), "set_material", "get_material");
+	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "material", PROPERTY_HINT_RESOURCE_TYPE, "ShaderMaterial"), "set_material", "get_material");
 
 	ADD_GROUP("LOD", "lod_");
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "lod_detailed_chunks_radius", PROPERTY_HINT_RANGE, "1,16"), "set_lod_detailed_chunks_radius", "get_lod_detailed_chunks_radius");
@@ -389,34 +431,46 @@ void Terrain::_update_chunks() {
 	}
 
 	RenderingServer *const rs = RenderingServer::get_singleton();
-	rs->multimesh_allocate_data(mm_chunks, quad_tree.selection_count, RenderingServer::MULTIMESH_TRANSFORM_3D, true);
 	int lod_half = (quad_tree.lod_levels + 1) / 2;
 	int instance_index = 0;
+	uint8_t *instance_data = mmesh_instance_data.ptrw();
+
+	if (rs->multimesh_get_instance_count(mm_chunks) < quad_tree.selection_count) {
+		_allocate_mmesh_data(rs);
+	}
 
 	for (int i = 0; i < quad_tree.selection_count; ++i) {
 		const LODQuadTree::QTNode *node = quad_tree.get_selected_node(i);
 		int lod = node->get_lod_level();
 		int texture_layer = storage->get_node_texture_layer(node->key, lod);
-		// int lod_diff = quad_tree.lod_levels - lod - 1;
-		// int x = node->x >> lod_diff;
-// 		int z = node->z >> lod_diff;
-// 		Vector2i root_node = Vector2i(x, z);
-// 		int texture_layer = 0;
-// 		bool node_ready = storage->get_node_texture_layer(root_node, texture_layer);
-// 		int node_size = 1 << lod_diff;
-// 		Vector2i uv_shift = Vector2i(node->x - x * node_size, node->z - z * node_size);
 
-// 		if (node_ready) {
-// 			_configure_chunk_mesh(rs, node, instance_index);
-// 			instance_index++;
-// 		}
+		if (texture_layer != MapStorage::INVALID_TEXTURE_LAYER) {
+			const Transform3D xform = quad_tree.get_node_transform(node);
+			rs->multimesh_instance_set_transform(mm_chunks, instance_index, xform);
+			const size_t data_index = instance_index * MMESH_INSTANCE_DATA_SIZE;
+			uint16_t layer_next_lod = texture_layer;
+
+			if (node->use_morph()) {
+				layer_next_lod = storage->get_node_texture_layer(node->key.next_lod(), lod + 1);
+
+				if (layer_next_lod == MapStorage::INVALID_TEXTURE_LAYER) {
+					layer_next_lod = texture_layer;
+				}
+			}
+
+			const uint64_t data = (node->flags << 32) | (layer_next_lod << 16) | texture_layer;
+			encode_uint64(data, instance_data + data_index);
+			instance_index++;
+		}
 	}
+
+	mmesh_instance_data_img->set_data(quad_tree.selection_count, 1, false, Image::FORMAT_RGF, mmesh_instance_data);
+	mmesh_instance_data_tex->update(mmesh_instance_data_img);
+	rs->multimesh_set_visible_instances(mm_chunks, instance_index);
 
 	if (debug_nodes_aabb_enabled) {
 		_debug_nodes_aabb_draw();
 	}
-
-	rs->multimesh_set_visible_instances(mm_chunks, instance_index);
 }
 
 void Terrain::_set_viewport_camera() {
@@ -491,9 +545,9 @@ void Terrain::_create_mesh() {
 	rs->mesh_add_surface_from_arrays(mesh, RenderingServer::PRIMITIVE_TRIANGLES, arrays);
 	mesh_valid = true;
 
-// 	if (material.is_valid()) {
-// 		rs->mesh_surface_set_material(mesh, 0, material->get_rid());
-// 	}
+	if (material.is_valid()) {
+		rs->mesh_surface_set_material(mesh, 0, material->get_rid());
+	}
 }
 
 void Terrain::_set_lod_levels() {
@@ -505,14 +559,10 @@ void Terrain::_set_lod_levels() {
 	storage->allocate_buffers(quad_tree.sector_size, num_nodes, quad_tree.lod_levels, map_scale, far_view);
 	dirty = true;
 
-// 	if (material.is_valid()) {
-// 		Ref<ImageTexture> morph_texture = quad_tree->get_morph_texture();
-// 		material->set_shader_parameter("morph_data", morph_texture);
-// 	}
-
-// 	if (storage_status == OK) {
-// 		storage->setup(info);
-// 	}
+	if (material_flags & SHADER_PARAM_MORPH_DATA) {
+		Ref<ImageTexture> morph_texture = quad_tree.get_morph_texture();
+		material->set_shader_parameter("morph_data", morph_texture);
+	}
 
 	if (debug_nodes_aabb_enabled) {
 		_debug_nodes_aabb_set_colors();
@@ -530,9 +580,10 @@ void Terrain::_storage_changed() {
 		mesh_valid = false;
 	}
 
-// 	if (material.is_valid()) {
-// 		material->set_shader_parameter("grid_const", Vector2(0.5 * (real_t)world_info->chunk_size, 2.0 / (real_t)world_info->chunk_size));
-// 	}
+	if (material_flags & SHADER_PARAM_GRID_CONST) {
+		Vector2 grid_const = Vector2(0.5 * (real_t)storage->chunk_size, 2.0 / (real_t)storage->chunk_size);
+		material->set_shader_parameter("grid_const", grid_const);
+	}
 }
 
 void Terrain::_storage_path_changed() {
@@ -551,19 +602,16 @@ void Terrain::_set_update_distance_tolerance_squared() {
 	update_distance_tolerance_squared *= update_distance_tolerance_squared;
 }
 
-// void Terrain::_configure_chunk_mesh(RenderingServer *p_rs, const TLODQuadTree::QTNode *p_node, int p_instance_index) {
-// 	const Transform3D xform = quad_tree->get_node_transform(p_node);
-// 	p_rs->multimesh_instance_set_transform(mm_chunks, p_instance_index, xform);
-	// const int lod = p_node->get_lod_level();
-	// int color_index = lod / 2 + lod_half * (lod % 2);
-	// Color lod_color = Color::from_hsv((real_t)color_index / (real_t)info.lod_levels, 0.8, 0.9);
-	// const uint32_t flags = uint32_t(node->flags) << 24;
-	// const uint32_t flags = uint32_t(node->flags) | (1 << 30);
-	// float encoded_alpha;
-	// std::memcpy(&encoded_alpha, &flags, sizeof(float));
-	// Color color = Color(lod_color, encoded_alpha);
-	// rs->multimesh_instance_set_color(mm_chunks, i, color);
-// }
+void Terrain::_allocate_mmesh_data(RenderingServer *p_rs) {
+	p_rs->multimesh_allocate_data(mm_chunks, quad_tree.selection_count, RenderingServer::MULTIMESH_TRANSFORM_3D);
+	mmesh_instance_data.resize(quad_tree.selection_count * MMESH_INSTANCE_DATA_SIZE);
+	mmesh_instance_data_img = Image::create_empty(quad_tree.selection_count, 1, false, Image::FORMAT_RGF);
+	mmesh_instance_data_tex = ImageTexture::create_from_image(mmesh_instance_data_img);
+
+	if (material_flags & SHADER_PARAM_INSTANCE_DATA) {
+		material->set_shader_parameter("instance_data", mmesh_instance_data_tex);
+	}
+}
 
 void Terrain::_debug_nodes_aabb_create() {
 	// Create debug mesh.

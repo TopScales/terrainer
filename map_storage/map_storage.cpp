@@ -189,7 +189,8 @@ void MapStorage::allocate_buffers(int p_sector_chunks, int p_num_nodes, int p_lo
     }
 }
 
-int MapStorage::get_node_texture_layer(const NodeKey &p_key, int p_lod) {
+uint16_t MapStorage::get_node_texture_layer(const NodeKey &p_key, int p_lod) {
+    ERR_FAIL_INDEX_V_EDMSG(p_lod, lods, 0, "Incorrect LOD level.");
     HashMap<NodeKey, Tracker> &map = textures_trackers.write[p_lod];
     Tracker *tracker = map.getptr(p_key);
 
@@ -204,7 +205,7 @@ int MapStorage::get_node_texture_layer(const NodeKey &p_key, int p_lod) {
         TextureData *td = memnew(TextureData);
         tracker->pointer = td;
         _add_request(p_key, tracker, DATA_TYPE_HEIGHT | DATA_TYPE_SPLAT, p_lod);
-        requested_layers++;
+        requested_layers++; // TODO: FIXME: Is this correctly set?
         return INVALID_TEXTURE_LAYER;
     }
 }

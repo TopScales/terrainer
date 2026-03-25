@@ -84,6 +84,10 @@ public:
             int cell_size = p_sector_size >> lod_shift;
             return Vector3((sector.cell.x * p_sector_size + cell.cell.x * cell_size) * p_scale_x, 0.0, (sector.cell.z * p_sector_size + cell.cell.z * cell_size) * p_scale_x);
         }
+        _FORCE_INLINE_ NodeKey next_lod() const {
+            CellKey next_cell = CellKey(cell.cell.x >> 1, cell.cell.z >> 1);
+            return NodeKey(sector, next_cell);
+        }
 
         uint32_t hash() const {
             uint32_t h = hash_murmur3_one_32(uint32_t(sector.key));
@@ -166,7 +170,7 @@ private:
     static constexpr float PRIORITY_MINMAX = 10.0f;
     static constexpr real_t PRIORITY_PREDICTION_DELTA_TIME = 2.0;
 
-    static const int INVALID_TEXTURE_LAYER = -1;
+    static const uint16_t INVALID_TEXTURE_LAYER = -1;
     static const int EXTRA_BUFFER_LAYERS = 8;
 
     // enum class ChunkState : uint8_t {
@@ -344,7 +348,7 @@ private:
     struct TextureData {
         PackedByteArray height;
         PackedByteArray splat;
-        int layer = INVALID_TEXTURE_LAYER;
+        uint16_t layer = INVALID_TEXTURE_LAYER;
     };
 
     String directory_path;
@@ -425,7 +429,7 @@ public:
     void get_minmax(const NodeKey &p_key, int p_lod, hmap_t &r_min, hmap_t &r_max, bool &r_has_data) const;
     void allocate_buffers(int p_sector_chunks, int p_num_nodes, int p_lods, const Vector3 &p_map_scale, real_t p_far_view);
 
-    int get_node_texture_layer(const NodeKey &p_key, int p_lod);
+    uint16_t get_node_texture_layer(const NodeKey &p_key, int p_lod);
 
     void update_viewer(const Vector3 &p_viewer_pos, const Vector3 &p_viewer_vel, const Vector3 &p_viewer_forward);
     void stop_io();

@@ -37,6 +37,13 @@ class Terrain : public Node3D {
 
 private:
     static constexpr real_t UPDATE_TOLERANCE_FACTOR = 0.05;
+    static const int MMESH_INSTANCE_DATA_SIZE = 8; // In bytes.
+
+    static const int SHADER_PARAM_MORPH_DATA = 1;
+    static const int SHADER_PARAM_GRID_CONST = 2;
+    static const int SHADER_PARAM_INSTANCE_DATA = 4;
+    static const int SHADER_PARAM_HMAP_ARRAY = 8;
+    static const int SHADER_PARAM_NORMALS_ARRAY = 16;
 
 //     static const int DIRTY_DATA = 1 << 1;
 //     static const int DIRTY_CHUNKS = 1 << 2;
@@ -44,16 +51,20 @@ private:
     static constexpr real_t DEBUG_AABB_LOD0_MARGIN = 2.0;
     static constexpr real_t DEBUG_AABB_MARGIN_LOD_SCALE_FACTOR = 0.5;
 
-//     Ref<ShaderMaterial> material;
+    Ref<ShaderMaterial> material;
     Ref<MapStorage> storage;
     Vector3 map_scale = Vector3(1.0, 1.0, 1.0);
     Vector2i world_regions = Vector2i(4, 4);
     int lod_detailed_chunks_radius = 2;
 
     bool mesh_valid = false;
+    int material_flags = 0;
     RID mesh;
     RID mm_chunks;
     RID mm_instance;
+    Ref<Image> mmesh_instance_data_img;
+    Ref<ImageTexture> mmesh_instance_data_tex;
+    PackedByteArray mmesh_instance_data;
 
     LODQuadTree quad_tree;
     Transform3D last_transform;
@@ -93,7 +104,7 @@ private:
     void _storage_path_changed();
     _FORCE_INLINE_ void _set_update_distance_tolerance_squared();
 
-//     _FORCE_INLINE_ void _configure_chunk_mesh(RenderingServer *p_rs, const TLODQuadTree::QTNode *p_node, int p_instance_index);
+    void _allocate_mmesh_data(RenderingServer *p_rs);
 
     void _debug_nodes_aabb_create();
     void _debug_nodes_aabb_free();
@@ -114,8 +125,8 @@ public:
     Vector3 get_map_scale() const;
     void set_world_regions(const Vector2i &p_regions);
     Vector2i get_world_regions() const;
-//     void set_material(const Ref<ShaderMaterial> &p_material);
-//     Ref<ShaderMaterial> get_material() const;
+    void set_material(const Ref<ShaderMaterial> &p_material);
+    Ref<ShaderMaterial> get_material() const;
     void set_lod_detailed_chunks_radius(int p_radius);
     int get_lod_detailed_chunks_radius() const;
     void set_lod_distance_ratio(real_t p_ratio);
