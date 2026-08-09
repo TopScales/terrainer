@@ -9,16 +9,11 @@
  * ==================================================================================
  */
 
-#ifndef TERRAINER_THREAD_SAFE_BUFFER_POOL_H
-#define TERRAINER_THREAD_SAFE_BUFFER_POOL_H
+#ifndef TERRAINER_BUFFER_POOL_H
+#define TERRAINER_BUFFER_POOL_H
 
 #include <atomic>
-#include <cstdlib>
-#include <thread>
 #include <memory>
-
-#include "core/math/vector2i.h"
-#include "core/templates/hash_map.h"
 
 #if defined(__APPLE__)
 #include <AvailabilityMacros.h>
@@ -46,6 +41,7 @@ namespace Terrainer {
  * Template parameter T: Element type (e.g., uint16_t)
  */
 template <typename T>
+// typedef uint16_t T;
 class BufferPool {
 private:
     // Cache line size (commonly 64 bytes on modern systems)
@@ -426,7 +422,8 @@ private:
 // Thread-local storage initialization
 template <typename T>
 thread_local typename BufferPool<T>::ThreadLocalCache BufferPool<T>::tls_cache;
+// thread_local typename BufferPool::ThreadLocalCache BufferPool::tls_cache;
 
 } // namespace Terrainer
 
-#endif // TERRAINER_THREAD_SAFE_BUFFER_POOL_H
+#endif // TERRAINER_BUFFER_POOL_H

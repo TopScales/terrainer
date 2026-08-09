@@ -78,7 +78,7 @@ int LODQuadTree::set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_rad
 }
 
 LODQuadTree::NodeSelectionResult LODQuadTree::select_sector_nodes(const Vector3 &p_viewer_position, CellKey p_sector, const Ref<MapStorage> &p_storage, int p_stop_at_lod_level) {
-    if (p_sector.cell.x >= sector_count_x || p_sector.cell.z >= sector_count_z) {
+    if (p_sector.x >= sector_count_x || p_sector.z >= sector_count_z) {
         return OutOfMap;
     }
 
@@ -175,8 +175,8 @@ Transform3D LODQuadTree::get_node_transform(const QTNode *p_node) const {
     const Vector3 bx = Vector3(p_node->size * map_scale.x, 0.0, 0.0);
     const Vector3 by = Vector3(0.0, 1.0, 0.0);
     const Vector3 bz = Vector3(0.0, 0.0, p_node->size * map_scale.z);
-    const Vector3 sector_pos = Vector3(p_node->key.sector.cell.x * sector_size * map_scale.x, 0, p_node->key.sector.cell.z * sector_size * map_scale.z);
-    const Vector3 cell_pos = Vector3(p_node->key.cell.cell.x * bx.x, p_node->min_y * map_scale.y, p_node->key.cell.cell.z * bz.z);
+    const Vector3 sector_pos = Vector3(p_node->key.sector.x * sector_size * map_scale.x, 0, p_node->key.sector.z * sector_size * map_scale.z);
+    const Vector3 cell_pos = Vector3(p_node->key.cell.x * bx.x, p_node->min_y * map_scale.y, p_node->key.cell.z * bz.z);
     const Vector3 origin = cell_pos + sector_pos + world_offset;
     return Transform3D(Basis(bx, by, bz), origin);
 }
@@ -207,8 +207,8 @@ LODQuadTree::NodeSelectionResult LODQuadTree::_lod_select(const Vector3 &p_viewe
     if (p_lod_level > p_stop_at_lod_level) {
         int next_lod = p_lod_level - 1;
         real_t next_distance_limit = lod_visibility_range[next_lod];
-        uint16_t x = 2 * p_key.cell.cell.x;
-        uint16_t z = 2 * p_key.cell.cell.z;
+        uint16_t x = 2 * p_key.cell.x;
+        uint16_t z = 2 * p_key.cell.z;
         uint16_t half_size = p_size / 2;
 
         if (aabb_intersects_sphere(box, p_viewer_position, next_distance_limit)) {
@@ -222,8 +222,8 @@ LODQuadTree::NodeSelectionResult LODQuadTree::_lod_select(const Vector3 &p_viewe
             res_subnode_br = _lod_select(p_viewer_position, p_storage, completely_in_frustum, NodeKey(p_key.sector, CellKey(x + 1ui16, z + 1ui16)), half_size, next_lod, p_stop_at_lod_level);
             ERR_FAIL_COND_V(res_subnode_br == MaxReached, MaxReached);
         } else {
-            uint16_t sector_x = p_key.sector.cell.x * sector_size;
-            uint16_t sector_z = p_key.sector.cell.z * sector_size;
+            uint16_t sector_x = p_key.sector.x * sector_size;
+            uint16_t sector_z = p_key.sector.z * sector_size;
 
             if (sector_x + x * half_size >= world_size.x || sector_z + z * half_size >= world_size.y) {
                 res_subnode_tl = OutOfMap;
@@ -277,9 +277,9 @@ LODQuadTree::NodeSelectionResult LODQuadTree::_lod_select(const Vector3 &p_viewe
 }
 
 _FORCE_INLINE_ AABB LODQuadTree::_get_node_AABB(const NodeKey &p_key, hmap_t min_y, hmap_t max_y, uint16_t p_size) const {
-    const Vector3 sector_position = Vector3(p_key.sector.cell.x * sector_size * chunk_size, 0, p_key.sector.cell.z * sector_size * chunk_size) * map_scale;
+    const Vector3 sector_position = Vector3(p_key.sector.x * sector_size * chunk_size, 0, p_key.sector.z * sector_size * chunk_size) * map_scale;
     const Vector3 node_size = Vector3(p_size * chunk_size, max_y - min_y, p_size * chunk_size) * map_scale;
-    const Vector3 node_position = Vector3(p_key.cell.cell.x * node_size.x, min_y * map_scale.y, p_key.cell.cell.z * node_size.z) + sector_position + world_offset;
+    const Vector3 node_position = Vector3(p_key.cell.x * node_size.x, min_y * map_scale.y, p_key.cell.z * node_size.z) + sector_position + world_offset;
     return AABB(node_position, node_size);
 }
 

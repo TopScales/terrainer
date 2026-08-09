@@ -425,12 +425,13 @@ void Terrain::_update_chunks() {
 	}
 
 	dirty = false;
+	RenderingServer *const rs = RenderingServer::get_singleton();
 
 	if (quad_tree.selection_count == 0) {
+		rs->multimesh_set_visible_instances(mm_chunks, 0);
 		return;
 	}
 
-	RenderingServer *const rs = RenderingServer::get_singleton();
 	int lod_half = (quad_tree.lod_levels + 1) / 2;
 	int instance_index = 0;
 	uint8_t *instance_data = mmesh_instance_data.ptrw();
@@ -458,15 +459,14 @@ void Terrain::_update_chunks() {
 				}
 			}
 
-			const uint64_t data = (node->flags << 32) | (layer_next_lod << 16) | texture_layer;
-			encode_uint64(data, instance_data + data_index);
+			const uint64_t data_bytes = (uint64_t(node->flags) << 32) | (layer_next_lod << 16) | texture_layer;
+			encode_uint64(data_bytes, instance_data + data_index);
 			instance_index++;
 		}
 	}
 
 	mmesh_instance_data_img->set_data(quad_tree.selection_count, 1, false, Image::FORMAT_RGF, mmesh_instance_data);
 	mmesh_instance_data_tex->update(mmesh_instance_data_img);
-	rs->multimesh_set_visible_instances(mm_chunks, instance_index);
 
 	if (debug_nodes_aabb_enabled) {
 		_debug_nodes_aabb_draw();

@@ -86,13 +86,13 @@ void MapStorage::load_minmax(CellKey p_sector, bool p_in_frustum) {
 
         if (sector_size < region_size) {
             uint16_t region_sectors = region_size / sector_size;
-            const CellKey region_key = CellKey(p_sector.cell.x / region_sectors, p_sector.cell.z / region_sectors);
+            const CellKey region_key = CellKey(p_sector.x / region_sectors, p_sector.z / region_sectors);
 
             for (uint16_t izs = 0; izs < region_sectors; ++izs) {
-                const int z_sector = izs + region_key.cell.z * region_sectors;
+                const int z_sector = izs + region_key.z * region_sectors;
 
                 for (uint16_t ixs = 0; ixs < region_sectors; ++ixs) {
-                    const uint16_t x_sector = ixs + region_key.cell.x * region_sectors;
+                    const uint16_t x_sector = ixs + region_key.x * region_sectors;
                     const CellKey sector_key = CellKey(x_sector, z_sector);
                     auto it = minmax_trackers.insert(sector_key, {current_frame, Tracker::Status::LOADING, p_in_frustum});
                     tracker = &it->value;
@@ -114,7 +114,7 @@ void MapStorage::get_minmax(const NodeKey &p_key, int p_lod, hmap_t &r_min, hmap
         hmap_t *minmax = (hmap_t *)cached_minmax_tracker->pointer;
         const size_t lod_offset = minmax_lod_offsets[p_lod];
         const size_t block_size = sector_size >> p_lod;
-        const size_t cell_offset = 2 * (p_key.cell.cell.x + block_size * p_key.cell.cell.z);
+        const size_t cell_offset = 2 * (p_key.cell.x + block_size * p_key.cell.z);
         const size_t offset = lod_offset + cell_offset;
         r_min = minmax[offset];
         r_max = minmax[offset + 1];
@@ -127,6 +127,7 @@ void MapStorage::get_minmax(const NodeKey &p_key, int p_lod, hmap_t &r_min, hmap
 }
 
 void MapStorage::allocate_buffers(int p_sector_chunks, int p_num_nodes, int p_lods, const Vector3 &p_map_scale, real_t p_far_view) {
+    stop_io();
     sector_size = p_sector_chunks;
     lods = p_lods;
     map_scale = p_map_scale;
@@ -142,31 +143,39 @@ void MapStorage::allocate_buffers(int p_sector_chunks, int p_num_nodes, int p_lo
         blocks_z = region_size * (size_t)Math::ceil(real_t(sector_size * blocks_z) / real_t(region_size)) / sector_size + 1;
     }
 
-    const size_t block_count = blocks_x * blocks_z * BUFFER_EXTRA_ALLOCATION_FACTOR;
+    const size_t minmax_block_count = blocks_x * blocks_z * BUFFER_EXTRA_ALLOCATION_FACTOR;
     minmax_lod_offsets.resize(lods);
-    size_t block_size = 0;
-    size_t lod_block_size = 2 * sector_size * sector_size;
+    hmap_lod_offset.resize(lods);
+    size_t minmax_block_size = 0;
+    size_t minmax_lod_block_size = 2 * sector_size * sector_size; // Shouldn't be using region size???
     cancelled_frame = current_frame++;
+    size_t hmap_block_size = chunk_size;
+    size_t hmap_offset = 0;
 
     for (int ilod = 0; ilod < lods; ++ilod) {
-        minmax_lod_offsets.set(ilod, block_size);
-        block_size += lod_block_size;
-        lod_block_size >>= 2;
+        minmax_lod_offsets.set(ilod, minmax_block_size);
+        hmap_lod_offset.set(ilod, hmap_offset);
+        const size_t hmap_lod_block = (hmap_block_size + 1) * (hmap_block_size + 1) + 4 * (hmap_block_size + 1);
+        hmap_offset += hmap_lod_block;
+        hmap_block_size >>= 1;
+        minmax_block_size += minmax_lod_block_size;
+        minmax_lod_block_size >>= 2;
     }
 
     if (minmax_buffer) {
-        if (minmax_buffer->get_block_size() != block_size && !minmax_read.is_empty()) {
+        if (minmax_buffer->get_block_size() != minmax_block_size && !minmax_read.is_empty()) {
             minmax_read.clear();
         }
 
-        if (minmax_buffer->get_block_size() != block_size || minmax_buffer->get_block_count() != block_count) {
+        if (minmax_buffer->get_block_size() != minmax_block_size || minmax_buffer->get_block_count() != minmax_block_count) {
             memdelete(minmax_buffer);
             minmax_buffer = nullptr;
+            minmax_trackers.clear();
         }
     }
 
     if (!minmax_buffer) {
-        minmax_buffer = memnew(BufferPool<hmap_t>(block_size, block_count));
+        minmax_buffer = memnew(BufferPool<hmap_t>(minmax_block_size, minmax_block_count));
     }
 
 
@@ -176,16 +185,29 @@ void MapStorage::allocate_buffers(int p_sector_chunks, int p_num_nodes, int p_lo
     }
 
     textures_trackers.resize(lods);
-    size_t hmap_count = p_num_nodes * BUFFER_EXTRA_ALLOCATION_FACTOR;
-    size_t hmap_size = (chunk_size + 1) * (chunk_size + 1) + 4 * (chunk_size + 1);
+    _allocate_textures(p_num_nodes);
+    const size_t hmap_count = p_num_nodes * hmap_buffer_size_factor;
+    const size_t hmap_size = (chunk_size + 1) * (chunk_size + 1);
 
-    if (hmap_buffer && hmap_buffer->get_block_count() != hmap_count) {
+    if (hmap_buffer && hmap_buffer->get_block_count() != hmap_count || hmap_buffer->get_block_size() != hmap_size) {
         memdelete(hmap_buffer);
         hmap_buffer = nullptr;
+        memdelete(hmap_load);
+
+        for (int i = 0; i < textures_trackers.size(); ++i) {
+            for (KeyValue<NodeKey, Tracker> &kv : textures_trackers.get(i)) {
+                Tracker &tracker = kv.value;
+                TextureData *td = (TextureData *)tracker.pointer;
+                memdelete(td);
+            }
+        }
+
+        textures_trackers.clear();
     }
 
     if (!hmap_buffer) {
-        hmap_buffer = memnew(BufferPool<hmap_t>(hmap_size, hmap_count));
+        hmap_buffer = memnew(VectorBufferPool<hmap_t>(hmap_size, hmap_count));
+        hmap_load = memnew(AlignedBuffer<hmap_t>(hmap_size + 4 * (chunk_size + 1)));
     }
 }
 
@@ -205,7 +227,6 @@ uint16_t MapStorage::get_node_texture_layer(const NodeKey &p_key, int p_lod) {
         TextureData *td = memnew(TextureData);
         tracker->pointer = td;
         _add_request(p_key, tracker, DATA_TYPE_HEIGHT | DATA_TYPE_SPLAT, p_lod);
-        requested_layers++; // TODO: FIXME: Is this correctly set?
         return INVALID_TEXTURE_LAYER;
     }
 }
@@ -498,6 +519,11 @@ void MapStorage::_add_request(const NodeKey &p_key, Tracker *p_tracker, uint16_t
 
 void MapStorage::_submit_requests() {
     if (io_queue->size() == MAX_QUEUE_SIZE || io_pending.is_empty()) {
+        if (!io_thread.is_started()) {
+            io_running.set();
+            io_thread.start(_process_requests, this);
+        }
+
         return;
     }
 
@@ -591,15 +617,15 @@ void MapStorage::_load_sector_minmax(const NodeKey &p_key, const IORequest &p_re
             return;
         }
 
-        const CellKey region_key = CellKey(p_key.sector.cell.x / region_sectors, p_key.sector.cell.z / region_sectors);
+        const CellKey region_key = CellKey(p_key.sector.x / region_sectors, p_key.sector.z / region_sectors);
         uint16_t *src = minmax_read.ptrw();
         _load_region_minmax(region_key, src, minmax_read.size());
 
         for (int izs = 0; izs < region_sectors; ++izs) {
-            const int z_sector = izs + region_key.cell.z * region_sectors;
+            const int z_sector = izs + region_key.z * region_sectors;
 
             for (int ixs = 0; ixs < region_sectors; ++ixs) {
-                const int x_sector = ixs + region_key.cell.x * region_sectors;
+                const int x_sector = ixs + region_key.x * region_sectors;
                 const CellKey sector_key = CellKey(x_sector, z_sector);
                 size_t write_size = 2 * sector_size * sizeof(hmap_t);
                 size_t rows = sector_size;
@@ -639,7 +665,6 @@ void MapStorage::_load_sector_minmax(const NodeKey &p_key, const IORequest &p_re
             return;
         }
 
-        ERR_FAIL_NULL_EDMSG(sector_buffer, "Error allocating buffer to read minmax data.");
         IOResult res = IOResult(p_key, p_request.request_id, DATA_TYPE_MINMAX, 0);
         res.pointer = sector_buffer;
 
@@ -650,10 +675,10 @@ void MapStorage::_load_sector_minmax(const NodeKey &p_key, const IORequest &p_re
             int num_lods = MIN(saved_lods, lods);
 
             for (int izr = 0; izr < sector_regions; ++izr) {
-                const int z_region = izr + p_key.sector.cell.z * sector_regions;
+                const int z_region = izr + p_key.sector.z * sector_regions;
 
                 for (int ixr = 0; ixr < sector_regions; ++ixr) {
-                    const int x_region = ixr + p_key.sector.cell.x * sector_regions;
+                    const int x_region = ixr + p_key.sector.x * sector_regions;
                     const CellKey region_key = CellKey(x_region, z_region);
                     uint16_t *data = minmax_read.ptrw();
                     _load_region_minmax(region_key, data, minmax_read.size());
@@ -768,6 +793,20 @@ bool MapStorage::_is_format_correct(Ref<FileAccess> &p_file) const {
     return true;
 }
 
+MapStorage::NodeKey MapStorage::_sector_to_region(const NodeKey &p_key, int p_lod) const {
+    if (sector_size == region_size) {
+        return p_key;
+    } else {
+        const uint32_t s = sector_size >> p_lod;
+        const uint32_t r = region_size >> p_lod;
+        uint32_t x = p_key.sector.x * s + p_key.cell.x;
+        uint32_t z = p_key.sector.z * s + p_key.cell.z;
+        CellKey region = CellKey(x / r, z / r);
+        CellKey cell = CellKey(x - r * region.x, z - r * region.z);
+        return NodeKey(region, cell);
+    }
+}
+
 void MapStorage::_clean_minmax() {
     if (minmax_buffer && minmax_buffer->get_utilization() > CLEANUP_BUFFER_UTILIZATION) {
         const int sector_cells = sector_size * chunk_size;
@@ -812,30 +851,27 @@ void MapStorage::_cache_minmax(CellKey p_sector) const {
     }
 }
 
-void MapStorage::_allocate_textures() {
-    if (requested_layers > num_layers) {
-        RenderingDevice *rd = RenderingServer::get_singleton()->get_rendering_device();
+void MapStorage::_allocate_textures(int p_layers) {
+    RenderingDevice *rd = RenderingServer::get_singleton()->get_rendering_device();
 
-        if (num_layers != 0) {
-            rd->free_rid(rd_heightmap_texture);
-        }
-
-        num_layers = requested_layers + EXTRA_BUFFER_LAYERS;
-        RenderingDevice::TextureFormat height_format;
-        height_format.array_layers = num_layers;
-        height_format.format = RenderingDevice::DATA_FORMAT_R8G8_UNORM;
-        height_format.width = chunk_size + 1;
-        height_format.height = chunk_size + 1;
-        height_format.mipmaps = 0;
-        height_format.texture_type = RenderingDevice::TEXTURE_TYPE_2D_ARRAY;
-        height_format.usage_bits = RenderingDevice::TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice::TEXTURE_USAGE_CAN_UPDATE_BIT;
-        RenderingDevice::TextureView tex_view;
-        rd_heightmap_texture = rd->texture_create(height_format, tex_view);
-        heightmap_texture->set_texture_rd_rid(rd_heightmap_texture);
-        // TODO: Transfer data from prev texture
+    if (num_layers != 0) {
+        rd->free_rid(rd_heightmap_texture);
     }
 
-    requested_layers = 0;
+    num_layers = p_layers * BUFFER_EXTRA_ALLOCATION_FACTOR;
+    RenderingDevice::TextureFormat height_format;
+    height_format.array_layers = num_layers;
+    height_format.format = RenderingDevice::DATA_FORMAT_R16_UINT;
+    height_format.width = chunk_size + 1;
+    height_format.height = chunk_size + 1;
+    height_format.mipmaps = 0;
+    height_format.texture_type = RenderingDevice::TEXTURE_TYPE_2D_ARRAY;
+    height_format.usage_bits = RenderingDevice::TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice::TEXTURE_USAGE_CAN_UPDATE_BIT;
+    RenderingDevice::TextureView tex_view;
+    rd_heightmap_texture = rd->texture_create(height_format, tex_view);
+    heightmap_texture->set_texture_rd_rid(rd_heightmap_texture);
+    used_layers = 0;
+    unused_texture_layers.clear();
 }
 
 int MapStorage::_next_layer() {
@@ -847,6 +883,69 @@ int MapStorage::_next_layer() {
     } else {
         return used_layers++;
     }
+}
+
+void MapStorage::_load_hmap(const NodeKey &p_region_key, const NodeKey &p_sector_key, int p_lod, const IORequest &p_request) {
+    Region **region_ptr = regions.getptr(p_region_key.sector);
+    IOResult res = IOResult(p_sector_key, p_request.request_id, DATA_TYPE_HEIGHT, p_lod);
+    bool has_hmap = false;
+
+    if (region_ptr) {
+        Region *region = *region_ptr;
+
+        if (region->header->has_hmap()) {
+            has_hmap = true;
+            int64_t buffer_index = hmap_buffer->allocate();
+
+            if (buffer_index == VectorBufferPool<hmap_t>::INVALID_BUFFER) {
+                res.status = IOResult::Status::OUT_OF_MEMORY;
+                io_result->push(res);
+                return;
+            }
+
+            hmap_t *buffer = hmap_buffer->ptrw(buffer_index);
+            // size_t hmap_index =
+        }
+    }
+
+
+
+        // hmap_t *sector_buffer = minmax_buffer->allocate();
+
+        // if (!sector_buffer) {
+        //     IOResult res = IOResult(p_key, p_request.request_id, DATA_TYPE_MINMAX, 0);
+        //     res.status = IOResult::Status::OUT_OF_MEMORY;
+        //     io_result->push(res);
+        //     return;
+        // }
+
+        // ERR_FAIL_NULL_EDMSG(sector_buffer, "Error allocating buffer to read minmax data.");
+        // IOResult res = IOResult(p_key, p_request.request_id, DATA_TYPE_MINMAX, 0);
+        // res.pointer = sector_buffer;
+
+
+        // res.status = IOResult::Status::SUCCESS;
+        // io_result->push(res);
+
+    // if (region_ptr) {
+    //     region = *region_ptr;
+    // } else {
+    //     region = _create_region(p_region_key);
+    // }
+
+    // if (region->header->has_minmax()) {
+    //     region->data_access->seek(MINMAX_OFFSET);
+    //     size_t nbytes = p_size * sizeof(hmap_t);
+    //     int64_t len = region->data_access->get_buffer(reinterpret_cast<uint8_t*>(p_buffer), nbytes);
+    //     ERR_FAIL_COND_EDMSG(len != nbytes, "Returned buffer of different size than expected.");
+    // } else {
+    //     hmap_t hmax = default_height + 1;
+
+    //     for (int i = 0; i < p_size; i += 2) {
+    //         p_buffer[i] = default_height;
+    //         p_buffer[i + 1] = hmax;
+    //     }
+    // }
 }
 
 // void MapStorage::_clean_hmap() {

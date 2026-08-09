@@ -12,6 +12,7 @@
 #ifndef TERRAINER_MAP_STORAGE_H
 #define TERRAINER_MAP_STORAGE_H
 
+#include "aligned_buffer.h"
 #include "buffer_pool.h"
 #include "core/io/dir_access.h"
 #include "core/io/file_access.h"
@@ -20,6 +21,7 @@
 #include "queue.h"
 #include "scene/resources/texture_rd.h"
 #include "servers/rendering/rendering_server.h"
+#include "vector_buffer_pool.h"
 
 // #include "core/object/worker_thread_pool.h"
 // #include "core/os/mutex.h"
@@ -41,29 +43,29 @@ class MapStorage : public Resource {
 public:
     typedef uint16_t hmap_t;
 
-    union CellKey {
-        struct {
-            uint16_t x;
-            uint16_t z;
-        } cell;
-        uint32_t key;
+    struct CellKey {
+        uint16_t x;
+        uint16_t z;
 
-        constexpr CellKey() : key(0) {}
-        constexpr CellKey(uint16_t p_x, uint16_t p_z) : cell({p_x, p_z}) {}
+        constexpr CellKey() : x(0), z(0) {}
+        constexpr CellKey(uint16_t p_x, uint16_t p_z) : x(p_x), z(p_z) {}
 
-        constexpr CellKey operator+(CellKey p_k) const { return CellKey(cell.x + p_k.cell.x, cell.z + p_k.cell.z); }
-        constexpr void operator+=(CellKey p_k) { cell.x += p_k.cell.x; cell.z += p_k.cell.z; }
-        constexpr CellKey operator-(CellKey p_k) const { return CellKey(cell.x - p_k.cell.x, cell.z - p_k.cell.z); }
-        constexpr void operator-=(CellKey p_k) { cell.x -= p_k.cell.x; cell.z -= p_k.cell.z; }
-        constexpr bool operator==(CellKey p_k) const { return key == p_k.key; }
-        constexpr bool operator!=(CellKey p_k) const { return key != p_k.key; }
+        constexpr CellKey operator+(CellKey p_k) const { return CellKey(x + p_k.x, z + p_k.z); }
+        constexpr void operator+=(CellKey p_k) { x += p_k.x; z += p_k.z; }
+        constexpr CellKey operator-(CellKey p_k) const { return CellKey(x - p_k.x, z - p_k.z); }
+        constexpr void operator-=(CellKey p_k) { x -= p_k.x; z -= p_k.z; }
+        constexpr CellKey operator*(CellKey p_k) const { return CellKey(x * p_k.x, z * p_k.z); }
+        constexpr CellKey operator*(uint16_t p_k) const { return CellKey(x * p_k, z * p_k); }
+        constexpr CellKey operator/(uint16_t p_k) const { return CellKey(x / p_k, z / p_k); }
+        constexpr bool operator==(CellKey p_k) const { return x == p_k.x && z == p_k.z; }
+        constexpr bool operator!=(CellKey p_k) const { return x != p_k.x || z != p_k.z; }
 
         _FORCE_INLINE_ Vector3 position(real_t p_scale_x, real_t p_scale_z) const {
-            return Vector3(cell.x * p_scale_x, 0.0, cell.z * p_scale_z);
+            return Vector3(x * p_scale_x, 0.0, z * p_scale_z);
         }
 
         uint32_t hash() const {
-            return hash_murmur3_one_32(key);
+            return hash_murmur3_one_32((uint32_t)x | ((uint32_t)z << 16));
 	    }
     };
     static_assert(sizeof(CellKey) == 4);
@@ -82,16 +84,16 @@ public:
         _FORCE_INLINE_ Vector3 position(int p_sector_size, int p_lod, int p_num_lods, real_t p_scale_x, real_t p_scale_z) const {
             int lod_shift = p_num_lods - p_lod - 1;
             int cell_size = p_sector_size >> lod_shift;
-            return Vector3((sector.cell.x * p_sector_size + cell.cell.x * cell_size) * p_scale_x, 0.0, (sector.cell.z * p_sector_size + cell.cell.z * cell_size) * p_scale_x);
+            return Vector3((sector.x * p_sector_size + cell.x * cell_size) * p_scale_x, 0.0, (sector.z * p_sector_size + cell.z * cell_size) * p_scale_x);
         }
         _FORCE_INLINE_ NodeKey next_lod() const {
-            CellKey next_cell = CellKey(cell.cell.x >> 1, cell.cell.z >> 1);
+            CellKey next_cell = CellKey(cell.x >> 1, cell.z >> 1);
             return NodeKey(sector, next_cell);
         }
 
         uint32_t hash() const {
-            uint32_t h = hash_murmur3_one_32(uint32_t(sector.key));
-            h = hash_murmur3_one_32(uint32_t(cell.key), h);
+            uint32_t h = sector.hash();
+            h = hash_murmur3_one_32(cell.hash(), h);
             return hash_fmix32(h);
         }
     };
@@ -142,6 +144,8 @@ private:
     static const uint8_t FORMAT_BIG_ENDIAN = 0x22;
 
     static constexpr uint8_t REGION_FLAG_HAS_MINMAX = 1 << 0;
+    static constexpr uint8_t REGION_FLAG_HAS_HMAP = 1 << 1;
+    static constexpr uint8_t REGION_FLAG_HAS_SPLAT = 1 << 2;
 
     // static constexpr uint32_t CHUNK_FLAG_HAS_MINMAX = 1 << 0;
     // static constexpr uint32_t CHUNK_FLAG_HAS_HEIGHT = 1 << 1;
@@ -171,7 +175,6 @@ private:
     static constexpr real_t PRIORITY_PREDICTION_DELTA_TIME = 2.0;
 
     static const uint16_t INVALID_TEXTURE_LAYER = -1;
-    static const int EXTRA_BUFFER_LAYERS = 8;
 
     // enum class ChunkState : uint8_t {
     //     Unloaded,
@@ -222,14 +225,16 @@ private:
         uint8_t minmax_height_format;
         uint8_t splat_meta_format;
         uint8_t minmax_dir_size;
-        uint8_t height_dir_size;
+        uint8_t hmap_dir_size;
         uint8_t splat_dir_size;
         uint8_t meta_dir_size;
-        uint64_t height_offset;
+        uint64_t hmap_offset;
         uint64_t splat_offset;
         uint64_t meta_offset;
 
         _FORCE_INLINE_ bool has_minmax() const { return presence & REGION_FLAG_HAS_MINMAX; };
+        _FORCE_INLINE_ bool has_hmap() const { return presence & REGION_FLAG_HAS_HMAP; };
+        _FORCE_INLINE_ bool has_splat() const { return presence & REGION_FLAG_HAS_SPLAT; };
     };
     static_assert(sizeof(Header) == HEADER_SIZE);
 
@@ -386,31 +391,35 @@ private:
     real_t camera_far = 0.0;
     hmap_t default_height = 0;
 
-    BufferPool<hmap_t> *hmap_buffer = nullptr;
+    AlignedBuffer<hmap_t> *hmap_load = nullptr;
+    VectorBufferPool<hmap_t> *hmap_buffer = nullptr;
+    Vector<size_t> hmap_lod_offset;
     Vector<HashMap<NodeKey, Tracker>> textures_trackers;
     Vector<int> unused_texture_layers;
     int num_layers = 0;
     int used_layers = 0;
-    int requested_layers = 0;
     RID rd_heightmap_texture;
     Ref<Texture2DArrayRD> heightmap_texture;
+    real_t hmap_buffer_size_factor = 0.5;
 
     void _clear();
     static void _process_requests(void *p_storage);
     _FORCE_INLINE_ void _add_request(const NodeKey &p_key, Tracker *p_tracker, uint16_t p_data_type, uint16_t p_lod);
     void _submit_requests();
     void _process_results();
-    _FORCE_INLINE_ void _load_region_minmax(CellKey p_region_key, hmap_t *p_buffer, size_t p_size);
+    void _load_region_minmax(CellKey p_region_key, hmap_t *p_buffer, size_t p_size);
     void _load_sector_minmax(const NodeKey &p_key, const IORequest &p_request);
     Region* _create_region(CellKey p_region_key);
     float _calc_request_priority(const Vector3 &p_chunk_pos, bool p_in_frustum);
     _FORCE_INLINE_ bool _is_format_correct(Ref<FileAccess> &p_file) const;
+    NodeKey _sector_to_region(const NodeKey &p_key, int p_lod) const;
 
     void _clean_minmax();
     void _cache_minmax(CellKey p_sector) const;
 
-    void _allocate_textures();
+    void _allocate_textures(int p_layers);
     int _next_layer();
+    void _load_hmap(const NodeKey &p_region_key, const NodeKey &p_sector_key, int p_lod, const IORequest &p_request);
     // void _clean_hmap();
 
 protected:
