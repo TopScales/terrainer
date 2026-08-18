@@ -7,7 +7,7 @@ def configure(env):
 
 
 def get_doc_classes():
-    return ["Terrain"]
+    return ["Terrain", "MapStorage"]
 
 
 def get_doc_path():

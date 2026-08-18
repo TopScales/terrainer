@@ -16,9 +16,9 @@
 #include "terrain.h"
 #include "map_storage/map_storage.h"
 
-#ifdef TOOLS_ENABLED
-#include "editor/terrain_editor_plugin.h"
-#endif
+// #ifdef TOOLS_ENABLED
+// #include "editor/terrain_editor_plugin.h"
+// #endif
 
 #ifdef TERRAINER_MODULE
 #include "core/object/class_db.h"
@@ -40,11 +40,11 @@ void initialize_terrainer_module(ModuleInitializationLevel p_level) {
 		GDREGISTER_CLASS(MapStorage);
 	}
 #ifdef TOOLS_ENABLED
-	if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
-		GDREGISTER_CLASS(TerrainEditor);
-		GDREGISTER_CLASS(TerrainEditorPlugin);
-		EditorPlugins::add_by_type<TerrainEditorPlugin>();
-	}
+	// if (p_level == MODULE_INITIALIZATION_LEVEL_EDITOR) {
+	// 	GDREGISTER_CLASS(TerrainEditor);
+	// 	GDREGISTER_CLASS(TerrainEditorPlugin);
+	// 	EditorPlugins::add_by_type<TerrainEditorPlugin>();
+	// }
 #endif
 }
 

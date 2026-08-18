@@ -98,7 +98,11 @@ inline bool aabb_intersects_sphere(const AABB &p_aabb, const Vector3 &p_center, 
 	return aabb_min_distance_sqrd_from_point(p_aabb, p_center) <= p_radius * p_radius;
 }
 
-inline int lod_expand(int p_size, int p_lods) {
+inline int lod_geom_expand(int p_size, int p_lods) {
+	return 2 * int(p_size * (1.0 - 1.0 / float(1 << p_lods)));
+}
+
+inline int lod_geom_expand_sqr(int p_size, int p_lods) {
 	return int(4.0 * p_size * (1.0 - 1.0 / float(1 << (2 * p_lods))) / 3.0);
 }
 

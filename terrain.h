@@ -12,7 +12,7 @@
 #ifndef TERRAINER_TERRAIN_H
 #define TERRAINER_TERRAIN_H
 
-#include "lod_quad_tree.h"
+// #include "lod_quad_tree.h"
 #include "map_storage/map_storage.h"
 // #include "terrain_info.h"
 
@@ -37,36 +37,36 @@ class Terrain : public Node3D {
 
 private:
     static constexpr real_t UPDATE_TOLERANCE_FACTOR = 0.05;
-    static const int MMESH_INSTANCE_DATA_SIZE = 8; // In bytes.
+//     static const int MMESH_INSTANCE_DATA_SIZE = 8; // In bytes.
 
-    static const int SHADER_PARAM_MORPH_DATA = 1;
-    static const int SHADER_PARAM_GRID_CONST = 2;
-    static const int SHADER_PARAM_INSTANCE_DATA = 4;
-    static const int SHADER_PARAM_HMAP_ARRAY = 8;
-    static const int SHADER_PARAM_NORMALS_ARRAY = 16;
+//     static const int SHADER_PARAM_MORPH_DATA = 1;
+//     static const int SHADER_PARAM_GRID_CONST = 2;
+//     static const int SHADER_PARAM_INSTANCE_DATA = 4;
+//     static const int SHADER_PARAM_HMAP_ARRAY = 8;
+//     static const int SHADER_PARAM_NORMALS_ARRAY = 16;
 
-//     static const int DIRTY_DATA = 1 << 1;
-//     static const int DIRTY_CHUNKS = 1 << 2;
+// //     static const int DIRTY_DATA = 1 << 1;
+// //     static const int DIRTY_CHUNKS = 1 << 2;
 
-    static constexpr real_t DEBUG_AABB_LOD0_MARGIN = 2.0;
-    static constexpr real_t DEBUG_AABB_MARGIN_LOD_SCALE_FACTOR = 0.5;
+//     static constexpr real_t DEBUG_AABB_LOD0_MARGIN = 2.0;
+//     static constexpr real_t DEBUG_AABB_MARGIN_LOD_SCALE_FACTOR = 0.5;
 
-    Ref<ShaderMaterial> material;
     Ref<MapStorage> storage;
     Vector3 map_scale = Vector3(1.0, 1.0, 1.0);
-    Vector2i world_regions = Vector2i(4, 4);
-    int lod_detailed_chunks_radius = 2;
+//     Ref<ShaderMaterial> material;
+//     Vector2i world_regions = Vector2i(4, 4);
+//     int lod_detailed_chunks_radius = 2;
 
-    bool mesh_valid = false;
-    int material_flags = 0;
     RID mesh;
+    bool mesh_valid = false;
+//     int material_flags = 0;
     RID mm_chunks;
     RID mm_instance;
-    Ref<Image> mmesh_instance_data_img;
-    Ref<ImageTexture> mmesh_instance_data_tex;
-    PackedByteArray mmesh_instance_data;
+//     Ref<Image> mmesh_instance_data_img;
+//     Ref<ImageTexture> mmesh_instance_data_tex;
+//     PackedByteArray mmesh_instance_data;
 
-    LODQuadTree quad_tree;
+//     LODQuadTree quad_tree;
     Transform3D last_transform;
     bool inside_world = false;
     Camera3D *camera = nullptr;
@@ -74,21 +74,19 @@ private:
     bool use_viewport_camera = true;
     Error storage_status = ERR_CANT_ACQUIRE_RESOURCE;
     Transform3D viewer_transform;
+    real_t update_distance_tolerance_squared = 1.0;
     bool dirty = false;
 
-    real_t update_distance_tolerance_squared = 1.0;
+//     struct DebugAABB {
+//         RID shader;
+//         RID material;
+//         RID mesh;
+//         RID multimesh;
+//         RID instance;
+//         PackedColorArray lod_colors;
+//     } debug_aabb;
 
-
-    struct DebugAABB {
-        RID shader;
-        RID material;
-        RID mesh;
-        RID multimesh;
-        RID instance;
-        PackedColorArray lod_colors;
-    } debug_aabb;
-
-    bool debug_nodes_aabb_enabled = false;
+//     bool debug_nodes_aabb_enabled = false;
 
     void _enter_world();
     void _exit_world();
@@ -98,46 +96,46 @@ private:
     void _update_chunks();
 
     void _set_viewport_camera();
-    void _create_mesh();
-    void _set_lod_levels();
     void _storage_changed();
     void _storage_path_changed();
+    void _set_lod_levels();
+    void _create_mesh();
     _FORCE_INLINE_ void _set_update_distance_tolerance_squared();
 
-    void _allocate_mmesh_data(RenderingServer *p_rs);
+//     void _allocate_mmesh_data(RenderingServer *p_rs);
 
-    void _debug_nodes_aabb_create();
-    void _debug_nodes_aabb_free();
-    void _debug_nodes_aabb_draw() const;
-    void _debug_nodes_aabb_set_colors();
+//     void _debug_nodes_aabb_create();
+//     void _debug_nodes_aabb_free();
+//     void _debug_nodes_aabb_draw() const;
+//     void _debug_nodes_aabb_set_colors();
 
 protected:
     void _notification(int p_what);
     static void _bind_methods();
     PackedStringArray get_configuration_warnings() const override;
 
-public:
-    void set_camera(Camera3D *p_camera);
+// public:
+//     void set_camera(Camera3D *p_camera);
 
     void set_storage(const Ref<MapStorage> &p_storage);
     Ref<MapStorage> get_storage() const;
     void set_map_scale(const Vector3 &p_scale);
     Vector3 get_map_scale() const;
-    void set_world_regions(const Vector2i &p_regions);
-    Vector2i get_world_regions() const;
-    void set_material(const Ref<ShaderMaterial> &p_material);
-    Ref<ShaderMaterial> get_material() const;
-    void set_lod_detailed_chunks_radius(int p_radius);
-    int get_lod_detailed_chunks_radius() const;
-    void set_lod_distance_ratio(real_t p_ratio);
-    real_t get_lod_distance_ratio() const;
+//     void set_world_regions(const Vector2i &p_regions);
+//     Vector2i get_world_regions() const;
+//     void set_material(const Ref<ShaderMaterial> &p_material);
+//     Ref<ShaderMaterial> get_material() const;
+//     void set_lod_detailed_chunks_radius(int p_radius);
+//     int get_lod_detailed_chunks_radius() const;
+//     void set_lod_distance_ratio(real_t p_ratio);
+//     real_t get_lod_distance_ratio() const;
 
-    int info_get_lod_levels() const;
-    int info_get_lod_nodes_count(int p_level) const;
-    int info_get_selected_nodes_count() const;
+//     int info_get_lod_levels() const;
+//     int info_get_lod_nodes_count(int p_level) const;
+//     int info_get_selected_nodes_count() const;
 
-    void set_debug_nodes_aabb_enabled(bool p_enabled);
-    bool is_debug_nodes_aabb_enabled() const;
+//     void set_debug_nodes_aabb_enabled(bool p_enabled);
+//     bool is_debug_nodes_aabb_enabled() const;
 
 	Terrain();
     ~Terrain();
