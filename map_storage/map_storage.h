@@ -12,6 +12,8 @@
 #ifndef TERRAINER_MAP_STORAGE_H
 #define TERRAINER_MAP_STORAGE_H
 
+#include <atomic>
+
 // #include "aligned_buffer.h"
 // #include "buffer_pool.h"
 #include "core/config/engine.h"
@@ -279,18 +281,56 @@ private:
     //     Writing,
     // };
 
-    struct Region {
-        Subheader *header;
-        Ref<FileAccess> query_access;
-        Ref<FileAccess> data_access;
-    };
-
     struct MinMax {
         hmap_t min;
         hmap_t max;
     };
     static_assert(sizeof(MinMax) == 2 * sizeof(hmap_t));
 
+
+    struct Region {
+        Subheader *header = nullptr;
+        Ref<FileAccess> query_access;
+        Ref<FileAccess> data_access;
+        LODBuffer<MinMax> *minmax = nullptr;
+        LODBuffer<hmap_t> *hmap = nullptr;
+
+        bool is_minmax_loaded() const {
+            Status st = status.load();
+            return st.minmax == LOADED;
+        }
+        bool is_hmap_loaded() const {
+            Status st = status.load(std::memory_order_acquire);
+            return st.hmap == LOADED;
+        }
+        void set_minmax_loaded(bool p_loaded) {
+            Status expected = status.load(std::memory_order_relaxed);
+            Status desired;
+            StatusEnum new_status = p_loaded ? LOADED : UNLOADED;
+
+            do {
+                desired = expected;
+                desired.minmax = new_status;
+            } while (!status.compare_exchange_weak(expected, desired, std::memory_order_release, std::memory_order_acquire));
+        }
+
+    private:
+        enum StatusEnum : uint8_t {
+            UNLOADED,
+            LOADED,
+            LOAD_REQUESTED,
+            SAVE_REQUESTED
+        };
+
+        struct Status {
+            StatusEnum minmax;
+            StatusEnum hmap;
+            StatusEnum splat;
+            StatusEnum meta;
+        };
+
+        std::atomic<Status> status{ Status{UNLOADED, UNLOADED} };
+    };
 //     struct Tracker {
 //         void *pointer;
 //         mutable uint64_t frame;
@@ -373,8 +413,10 @@ private:
 
 //     uint16_t sector_size = 0ui16; // In terms of chunks.
 //     int lods = 0;
-    int minmax_lods = 6; // log2(32) + 1
-    int hmap_lods = 5; // log2(32)
+    // int minmax_lods = 6; // log2(32) + 1
+    // int hmap_lods = 5; // log2(32)
+    LODBufferSpecs minmax_specs;
+    LODBufferSpecs hmap_specs;
 
 //     Thread io_thread;
 //     SafeFlag io_running;
@@ -412,8 +454,6 @@ private:
 //     Ref<Texture2DArrayRD> heightmap_texture;
 //     real_t hmap_buffer_size_factor = 0.5;
 
-    void store_heightmap_data(const PackedByteArray &p_data, const Vector2i &p_size);
-
     void _clear();
     _FORCE_INLINE_ bool _is_format_correct(Ref<FileAccess> &p_file) const;
 //     static void _process_requests(void *p_storage);
@@ -422,7 +462,7 @@ private:
 //     void _process_results();
 //     void _load_region_minmax(CellKey p_region_key, hmap_t *p_buffer, size_t p_size);
 //     void _load_sector_minmax(const NodeKey &p_key, const IORequest &p_request);
-    Region* _create_region(CellKey p_region_key);
+    // Region* _create_region(CellKey p_region_key);
 //     float _calc_request_priority(const Vector3 &p_chunk_pos, bool p_in_frustum);
 //     NodeKey _sector_to_region(const NodeKey &p_key, int p_lod) const;
 
@@ -446,8 +486,11 @@ public:
     static const int MAX_LOD_LEVELS = 15;
     static const StringName path_changed;
 
+    void store_heightmap_data(const PackedByteArray &p_data, const Vector2i &p_size);
     Error load_headers();
     bool has_region(const Vector2i &p_region) const;
+    int get_num_regions() const;
+    PackedByteArray get_region_hmap_buffer(const Vector2i &p_region);
 //     bool is_sector_loaded(CellKey p_sector) const;
 //     void load_minmax(CellKey p_sector, bool p_in_frustum);
 //     void get_minmax(const NodeKey &p_key, int p_lod, hmap_t &r_min, hmap_t &r_max, bool &r_has_data) const;

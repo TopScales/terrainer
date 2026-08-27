@@ -29,22 +29,38 @@ enum class LODBUfferSection {
     ZPosPad
 };
 
-template <typename T>
 struct LODBufferSpecs {
-    const size_t block_side;
-    const size_t pages;
-    int lods;
-    bool use_padding;
+    template <typename U>
+    friend class LODBuffer;
+
+    friend class MapStorage;
+
+private:
+    size_t block_side = 0;
+    size_t pages = 0;
+    int lods = 0;
+    bool use_padding = false;
     size_t page_size = 0;
     size_t* lod_offsets = nullptr;
     size_t* lod_sides = nullptr;
+    bool dirty = true;
 
-    LODBufferSpecs(size_t p_block_side, size_t p_pages, int p_lods, bool p_use_padding = false)
-        : block_side(p_block_side), pages(p_pages), lods(p_lods), use_padding(p_use_padding)
-    {
+public:
+    void config(size_t p_block_side, size_t p_pages, int p_lods, size_t p_type_size, bool p_use_padding = false) {
+        if (lod_offsets) {
+            memfree(lod_offsets);
+        }
+
+        if (lod_sides) {
+            memfree(lod_sides);
+        }
+
+        block_side = p_block_side;
+        pages = p_pages;
+        use_padding = p_use_padding;
         page_size = use_padding ? lod_geom_expand_sqr(block_side * block_side, lods) + lod_geom_expand(6 * block_side, lods) + 5 * lods
             : lod_geom_expand_sqr(block_side * block_side, lods);
-        size_t total_size = page_size * pages * sizeof(T);
+        size_t total_size = page_size * pages * p_type_size;
         lod_offsets = (size_t*)memalloc((lods + 1) * sizeof(size_t));
         lod_sides = (size_t*)memalloc(lods * sizeof(size_t));
 
@@ -73,7 +89,14 @@ struct LODBufferSpecs {
 
             lod_offsets[lods] = offset;
         }
+
+        dirty = false;
     }
+
+    void set_dirty() { dirty = true; }
+    bool is_dirty() { return dirty; }
+
+    LODBufferSpecs() {}
 
     ~LODBufferSpecs() {
         if (lod_offsets) {
@@ -86,20 +109,17 @@ struct LODBufferSpecs {
     }
 };
 
-template <typename T> class LODBufferPool;
-
 // typedef uint16_t T;
 template <typename T>
 class LODBuffer {
     friend class MapStorage;
-    friend class LODBufferPool<T>;
 
 private:
     T *buffer;
-    const LODBufferSpecs<T> specs;
+    const LODBufferSpecs specs;
 
 public:
-    LODBuffer(const LODBufferSpecs<T> &p_specs) : specs(p_specs)
+    LODBuffer(const LODBufferSpecs &p_specs) : specs(p_specs)
     {
         size_t total_size = specs.page_size * specs.pages * sizeof(T);
         buffer = (T*)memalloc(total_size);
@@ -119,6 +139,20 @@ public:
 
 	_FORCE_INLINE_ const T *ptr() const { return buffer; }
     _FORCE_INLINE_ T *ptrw() { return buffer; }
+    _FORCE_INLINE_ const uint8_t *bytes() const { return reinterpret_cast<uint8_t *>(buffer); }
+
+    const T *ptr(size_t p_lod, size_t p_page, LODBUfferSection p_section = LODBUfferSection::Main) const {
+        ERR_FAIL_INDEX_V_EDMSG(p_lod, specs.lods, nullptr, "LOD out of range.");
+        ERR_FAIL_INDEX_V_EDMSG(p_page, specs.pages, nullptr, "Page out of range.");
+        size_t index = specs.lod_offsets[p_lod] + specs.page_size * p_page;
+
+        if (p_section != LODBUfferSection::Main) {
+            size_t side = specs.lod_sides[p_lod];
+            index += side * (side + static_cast<int>(p_section));
+        }
+
+        return buffer + index;
+    }
 
     T *ptrw(size_t p_lod, size_t p_page, LODBUfferSection p_section = LODBUfferSection::Main) {
         ERR_FAIL_INDEX_V_EDMSG(p_lod, specs.lods, nullptr, "LOD out of range.");
@@ -204,93 +238,18 @@ public:
     }
 
     size_t size() const { return specs.page_size * specs.pages * sizeof(T); }
-};
 
-// typedef uint16_t T;
-template <typename T>
-class LODBufferPool {
-    const size_t page_side;
-    const LODBufferSpecs<T> specs;
-    LODBuffer<T> **pool;
-    size_t index = 0;
+    Vector<uint8_t> to_byte_array() const {
+		Vector<uint8_t> ret;
+        size_t total_size = specs.page_size * specs.pages * sizeof(T);
+        ret.resize(total_size);
 
-public:
-    LODBufferPool(size_t p_block_side, size_t p_page_side, int p_lods, bool p_use_padding = false)
-        : page_side(p_page_side), specs(LODBufferSpecs<T>(p_block_side, p_page_side * p_page_side, p_lods, p_use_padding))
-    {
-        pool = (LODBuffer<T>**)memalloc((p_page_side + 1) * sizeof(LODBuffer<T>));
-
-        if (pool) {
-            for (int i = 0; i <= page_side; ++i) {
-                pool[i] = memnew(LODBuffer<T>(specs));
-            }
+        if (total_size) {
+            memcpy(ret.ptrw(), ptr(), total_size);
         }
 
-    }
-
-    ~LODBufferPool() {
-        if (pool) {
-            for (int i = 0; i <= page_side; ++i) {
-                memdelete(pool[i]);
-            }
-
-            memfree(pool);
-        }
-    }
-
-    LODBuffer<T> *next() {
-        size_t ret_index = index;
-        index = (index + 1) % (page_side + 1);
-        return pool[ret_index];
-    }
-
-    // LODBuffer<T> *get_prev_col(size_t p_row, size_t p_region_col, size_t p_lod) {
-    //     if (p_region_col == 0) {
-    //         LODBuffer<T> &buffer = *pool[index];
-    //         buffer.pointer = buffer.ptrw(p_lod, p_row * page_side * specs.block_side * specs.block_side);
-    //         return &buffer;
-    //     } else {
-    //         LODBuffer<T> &buffer = *pool[(index + page_side) % (page_side + 1)];
-    //         buffer.pointer = buffer.ptrw(p_lod, (page_side - 1 + p_row * page_side) * specs.block_side * specs.block_side) + specs.block_side - 1;
-    //         return &buffer;
-    //     }
-    // }
-
-    // LODBuffer<T> *get_prev_row(size_t p_col, size_t p_region_row, size_t p_lod) {
-    //     if (p_region_row == 0) {
-    //         LODBuffer<T> &buffer = *pool[index];
-    //         buffer.pointer = buffer.ptrw(p_lod, p_col * specs.block_side * specs.block_side);
-    //         return &buffer;
-    //     } else {
-    //         LODBuffer<T> &buffer = *pool[(index + 1) % (page_side + 1)];
-    //         // buffer.pointer = buffer.ptrw(p_lod, (p_col + (page_side - 1) * page_side) * specs.block_side * specs.block_side);
-    //         return &buffer;
-    //     }
-    // }
-
-    LODBuffer<T> *get_prev_region_col() {
-        return pool[(index + page_side) % (page_side + 1)];
-    }
-
-    LODBuffer<T> *get_prev_region_row() {
-        return pool[(index + 1) % (page_side + 1)];
-    }
-
-    LODBuffer<T> *get_prev_col(size_t p_region_col) {
-        if (p_region_col == 0) {
-            return pool[index];
-        } else {
-            return pool[(index + page_side) % (page_side + 1)];
-        }
-    }
-
-    LODBuffer<T> *get_prev_row(size_t p_region_row) {
-        if (p_region_row == 0) {
-            return pool[index];
-        } else {
-            return pool[(index + 1) % (page_side + 1)];
-        }
-    }
+        return ret;
+	}
 };
 
 } // namespace Terrainer

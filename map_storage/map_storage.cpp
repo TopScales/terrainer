@@ -21,6 +21,370 @@ const String MapStorage::REGION_FILE_BASE_NAME("region_");
 const String MapStorage::REGION_FILE_EXTENSION("map");
 const String MapStorage::REGION_FILE_FORMAT(REGION_FILE_BASE_NAME + "%d_%d." + REGION_FILE_EXTENSION);
 
+void MapStorage::store_heightmap_data(const PackedByteArray &p_data, const Vector2i &p_size) {
+    ERR_FAIL_COND_EDMSG(data_locked, "Failed to store data: data is locked.");
+    ERR_FAIL_COND_EDMSG(p_data.size() != p_size.x * p_size.y, "Incorrect data buffer size.");
+    _clear();
+
+    if (minmax_specs.is_dirty()) {
+        int minmax_lods = MIN((int)Math::log2(float(region_size)) + 1, MAX_LOD_LEVELS);
+        minmax_specs.config(region_size, 1, minmax_lods, sizeof(MinMax));
+    }
+
+    if (hmap_specs.is_dirty()) {
+        int hmap_lods = MIN((int)Math::log2(float(chunk_size)), MAX_LOD_LEVELS);
+        hmap_specs.config(chunk_size, region_size * region_size, hmap_lods, sizeof(hmap_t), true);
+    }
+
+    const int32_t region_cells = region_size * chunk_size;
+    const Vector2i data_regions = Vector2i((p_size.x + 1) / region_cells, (p_size.y + 1) / region_cells);
+    LODBuffer<MinMax> minmax_buffer = LODBuffer<MinMax>(minmax_specs);
+    MinMax *minmax_ptr = minmax_buffer.ptrw();
+    size_t pool_size = region_size + 2;
+    Vector<Ref<FileAccess>> files_pool;
+    files_pool.resize(pool_size);
+    size_t pool_index = 0;
+    Vector<LODBuffer<hmap_t> *> buffer_pool;
+    buffer_pool.resize(pool_size);
+
+    for (int i = 0; i < region_size + 1; ++i) {
+        buffer_pool.set(i, memnew(LODBuffer<hmap_t>(hmap_specs)));
+    }
+
+    for (int reg_iz = 0; reg_iz < data_regions.y; ++reg_iz) {
+        for (int reg_ix = 0; reg_ix < data_regions.x; ++reg_ix) {
+            const CellKey region_key = CellKey(reg_ix, reg_iz);
+            String file_path = vformat("%s_%d_%d.%s", REGION_FILE_BASE_NAME, reg_ix, reg_iz, REGION_FILE_EXTENSION);
+            Error error;
+            Ref<FileAccess> data_file = FileAccess::open(file_path, FileAccess::WRITE, &error);
+            FileHeaderBytes fhb;
+            FileHeader &fh = fhb.value;
+            fh.magic[0] = MAGIC_STRING[0];
+            fh.magic[1] = MAGIC_STRING[1];
+            fh.magic[2] = MAGIC_STRING[2];
+            fh.magic[3] = MAGIC_STRING[3];
+            fh.subheader.presence = REGION_FLAG_HAS_MINMAX | REGION_FLAG_HAS_HMAP;
+            fh.subheader.version = FORMAT_VERSION;
+            fh.subheader.hmap_offset = minmax_buffer.size() + FILE_HEADER_SIZE;
+            fh.endianness = data_file->is_big_endian() ? FORMAT_BIG_ENDIAN : FORMAT_LITTLE_ENDIAN;
+            fh.format = FORMAT_PACKED;
+            fh.minmax_lods = minmax_specs.lods;
+            fh.hmap_lods = hmap_specs.lods;
+            fh.chunk_size = chunk_size;
+            fh.region_size = region_size;
+            data_file->store_buffer(fhb.bytes, FILE_HEADER_SIZE);
+            MinMax *minmax_ptr = minmax_buffer.ptrw();
+            const MinMax *reg_ptr = minmax_ptr;
+            LODBuffer<hmap_t> &hmap_buffer = *buffer_pool[pool_index];
+
+            for (int chunk_iz = 0; chunk_iz < region_size; ++chunk_iz) {
+                for (int chunk_ix = 0; chunk_ix < region_size; ++chunk_ix) {
+                    uint8_t min_h = UINT8_MAX;
+                    uint8_t max_h = 0;
+                    size_t chunk_index = chunk_ix + chunk_iz * region_size;
+                    hmap_t *hmap_ptr = hmap_buffer.ptrw(0, chunk_index);
+                    const hmap_t *chunk_ptr = hmap_ptr;
+
+                    // Set chunk's heights.
+                    for (int cell_iz = 0; cell_iz <= chunk_size; ++cell_iz) {
+                        const size_t z = MIN(cell_iz + chunk_iz * chunk_size + reg_iz * region_cells, p_size.y - 1);
+
+                        for (int cell_ix = 0; cell_ix <= chunk_size; ++cell_ix) {
+                            const size_t x = MIN(cell_ix + chunk_ix * chunk_size + reg_ix * region_cells, p_size.x - 1);
+                            const size_t index = x + z * p_size.x;
+                            const uint8_t h = p_data[index];
+                            min_h = MIN(min_h, h);
+                            max_h = MAX(max_h, h);
+                            *hmap_ptr = h;
+                            hmap_ptr++;
+                        }
+                    }
+
+                    // Fill LOD0 padding.
+                    hmap_t *h_xneg = hmap_buffer.ptrw(0, chunk_index, LODBUfferSection::XNegPad);
+                    const size_t ixneg = MAX(chunk_ix * chunk_size + reg_ix * region_cells - 1, 0);
+                    hmap_t *h_xpos = hmap_buffer.ptrw(0, chunk_index, LODBUfferSection::XPosPad);
+                    const size_t ixpos = MIN((chunk_ix + 1) * chunk_size + reg_ix * region_cells + 1, p_size.x - 1);
+                    hmap_t *h_zneg = hmap_buffer.ptrw(0, chunk_index, LODBUfferSection::ZNegPad);
+                    const size_t izneg = MAX(chunk_iz * chunk_size + reg_iz * region_cells - 1, 0);
+                    hmap_t *h_zpos = hmap_buffer.ptrw(0, chunk_index, LODBUfferSection::ZPosPad);
+                    const size_t izpos = MIN((chunk_iz + 1) * chunk_size + reg_iz * region_cells + 1, p_size.y - 1);
+
+                    for (int i = 0; i <= chunk_size; ++i) {
+                        const size_t z_x = MIN(i + chunk_iz * chunk_size + reg_iz * region_cells, p_size.y - 1);
+                        *h_xneg = p_data[ixneg + z_x * p_size.x];
+                        *h_xpos = p_data[ixpos + z_x * p_size.x];
+                        const size_t x_z = MIN(i + chunk_ix * chunk_size + reg_ix * region_cells, p_size.x - 1);
+                        *h_zneg = p_data[x_z + izneg * p_size.x];
+                        *h_zpos = p_data[x_z + izpos * p_size.x];
+                    }
+
+                    // Set minmax for this chunk.
+                    minmax_ptr->min = min_h;
+                    minmax_ptr->max = max_h;
+                    minmax_ptr++;
+                    int csize = chunk_size;
+
+                    // Set hmap LODs.
+                    for (size_t ilod = 1; ilod < hmap_specs.lods; ++ilod) {
+                        hmap_ptr = hmap_buffer.ptrw(ilod, chunk_index);
+                        size_t idx = 0;
+
+                        // Main section.
+                        for (size_t cell_iz = 0; cell_iz < csize; cell_iz += 2) {
+                            for (size_t cell_ix = 0; cell_ix < csize; cell_ix += 2) {
+                                size_t i00 = cell_ix + cell_iz * csize;
+                                size_t i10 = i00 + 1;
+                                size_t i01 = i00 + csize;
+                                size_t i11 = i01 + 1;
+                                uint32_t h = chunk_ptr[i00] + chunk_ptr[i10] + chunk_ptr[i01] + chunk_ptr[11] + 2;
+                                hmap_ptr[idx] = (hmap_t)(h >> 2);
+                                idx++;
+                            }
+                        }
+
+                        // Paddings.
+
+                        if (chunk_ix != 0) {
+                            hmap_t *prev_col_ptr = hmap_buffer.ptrw(ilod, chunk_index - 1) + csize - 1;
+                            hmap_t *left_pad_ptr = hmap_buffer.ptrw(ilod, chunk_index, LODBUfferSection::XNegPad);
+                            hmap_t *prev_col_right_pad_ptr = hmap_buffer.ptrw(ilod, chunk_index - 1, LODBUfferSection::XPosPad);
+
+                            for (size_t i = 0; i < csize; ++i) {
+                                const size_t ii = (csize + 1) * i;
+                                left_pad_ptr[i] = *(prev_col_ptr + ii);
+                                prev_col_ptr[ii + 1] = *(hmap_ptr + ii);
+                                prev_col_right_pad_ptr[i] = *(hmap_ptr + ii + 1);
+                            }
+                        }
+
+                        if (chunk_iz != 0) {
+                            hmap_t *prev_row_ptr = hmap_buffer.ptrw(ilod, chunk_index - region_size);
+                            hmap_t *top_pad_ptr = hmap_buffer.ptrw(ilod, chunk_index, LODBUfferSection::ZNegPad);
+                            memcpy(top_pad_ptr, prev_row_ptr + (csize + 1) * (csize - 1), csize);
+                            memcpy(prev_row_ptr + (csize + 1) * csize, hmap_ptr, csize);
+                            memcpy(hmap_buffer.ptrw(ilod, chunk_index - region_size, LODBUfferSection::ZPosPad), hmap_ptr + csize + 1, csize);
+
+                            if (chunk_ix < region_size - 1) {
+                                hmap_t *prev_row_next_ptr = hmap_buffer.ptrw(ilod, chunk_index - region_size + 1);
+                                top_pad_ptr[csize] = *(prev_row_next_ptr + (csize + 1) * (csize - 1));
+                                hmap_t *prev_row_next_left_pad_ptr = hmap_buffer.ptrw(ilod, chunk_index - region_size + 1, LODBUfferSection::XNegPad);
+                                prev_row_next_left_pad_ptr[csize] = *(hmap_ptr + csize - 1);
+                            }
+                        }
+
+                        if (chunk_ix != 0 && chunk_iz != 0) {
+                            size_t idx = chunk_index - region_size - 1;
+                            hmap_buffer.ptrw(ilod, idx)[(csize + 1) * (csize + 1) - 1] = *hmap_ptr;
+                            hmap_buffer.ptrw(ilod, idx, LODBUfferSection::XPosPad)[csize] = *(hmap_ptr + 1);
+                            hmap_buffer.ptrw(ilod, idx, LODBUfferSection::ZPosPad)[csize] = *(hmap_ptr + csize + 1);
+                        }
+
+                        csize >>= 1;
+                        chunk_ptr = hmap_ptr;
+                    }
+                }
+            }
+
+            // Fill paddings for region.
+            size_t csize = chunk_size;
+
+            if (reg_ix == 0) {
+                for (size_t ilod = 1; ilod < hmap_specs.lods; ++ilod) {
+                    for (size_t ichunk = 0; ichunk < region_size; ++ichunk) {
+                        hmap_t *left_pad = hmap_buffer.ptrw(ilod, ichunk * region_size, LODBUfferSection::XNegPad);
+                        const hmap_t *main = hmap_buffer.ptr(ilod, ichunk * region_size);
+
+                        for (size_t i = 0; i <= csize; ++i) {
+                            left_pad[i] = main[i * (csize + 1)];
+                        }
+                    }
+
+                    csize >>= 1;
+                }
+            } else {
+                const size_t prev_col_index = (pool_index + pool_size - 1) % pool_size;
+                LODBuffer<hmap_t> &prev_col_buffer = *buffer_pool[prev_col_index];
+
+                for (size_t ilod = 1; ilod < hmap_specs.lods; ++ilod) {
+                    for (size_t ichunk = 0; ichunk < region_size; ++ichunk) {
+                        size_t chunk_idx = ichunk * region_size;
+                        hmap_t *left_pad = hmap_buffer.ptrw(ilod, chunk_idx, LODBUfferSection::XNegPad);
+                        hmap_t *prev_col_ptr = prev_col_buffer.ptrw(ilod, chunk_idx) + csize - 1;
+                        const hmap_t *main_ptr = hmap_buffer.ptr(ilod, chunk_idx);
+                        hmap_t *prev_col_right_pad_ptr = prev_col_buffer.ptrw(ilod, chunk_idx, LODBUfferSection::XPosPad);
+
+                        for (size_t i = 0; i <= csize; ++i) {
+                            size_t ii = i * (csize + 1);
+                            left_pad[i] = *prev_col_ptr + ii;
+                            prev_col_ptr[ii + 1] = *main_ptr + ii;
+                            prev_col_right_pad_ptr[i] = *main_ptr + ii + 1;
+                        }
+                    }
+
+                    csize >>= 1;
+                }
+
+                if (reg_iz != 0) {
+                    const size_t prev_row_prev_index = (pool_index + 1) % pool_size;
+                    LODBuffer<hmap_t> &prev_row_prev_buffer = *buffer_pool[prev_row_prev_index];
+                    csize = chunk_size;
+
+                    for (size_t ilod = 1; ilod < hmap_specs.lods; ++ilod) {
+                        const hmap_t *main = hmap_buffer.ptr(ilod, 0);
+                        const size_t corner_idx = region_size * region_size - 1;
+                        hmap_t *corner_main = prev_row_prev_buffer.ptrw(ilod, corner_idx);
+                        corner_main[(csize + 1) * (csize + 1) - 1] = *main;
+                        hmap_t *corner_right_pad = prev_row_prev_buffer.ptrw(ilod, corner_idx, LODBUfferSection::XPosPad);
+                        corner_right_pad[csize] = *(main + 1);
+                        hmap_t *corner_bottom_pad = prev_row_prev_buffer.ptrw(ilod, corner_idx, LODBUfferSection::ZPosPad);
+                        corner_bottom_pad[csize] = *(main + csize + 1);
+                        csize >>= 1;
+                    }
+
+                    Ref<FileAccess> prev_row_prev_file = files_pool[prev_row_prev_index];
+                    prev_row_prev_file->store_buffer(prev_row_prev_buffer.bytes(), prev_row_prev_buffer.size());
+                    prev_row_prev_file->close();
+                }
+            }
+
+            csize = chunk_size;
+
+            if (reg_iz == 0) {
+                for (size_t ilod = 1; ilod < hmap_specs.lods; ++ilod) {
+                    for (size_t ichunk = 0; ichunk < region_size; ++ichunk) {
+                        hmap_t *top_pad = hmap_buffer.ptrw(ilod, ichunk, LODBUfferSection::ZNegPad);
+                        const hmap_t *main = hmap_buffer.ptr(ilod, ichunk);
+                        memcpy(top_pad, main, csize + 1);
+                    }
+
+                    csize >>= 1;
+                }
+            } else {
+                const size_t prev_row_index = (pool_index + 2) % pool_size;
+                LODBuffer<hmap_t> &prev_row_buffer = *buffer_pool[prev_row_index];
+
+                for (size_t ilod = 1; ilod < hmap_specs.lods; ++ilod) {
+                    for (size_t ichunk = 0; ichunk < region_size; ++ichunk) {
+                        hmap_t *top_pad = hmap_buffer.ptrw(ilod, ichunk, LODBUfferSection::ZNegPad);
+                        hmap_t *prev_row_ptr = prev_row_buffer.ptrw(ilod, ichunk + region_size * (region_size - 1)) + (csize + 1) * (csize - 1);
+                        memcpy(top_pad, prev_row_ptr, csize + 1);
+                        prev_row_ptr += csize + 1;
+                        const hmap_t *main_ptr = hmap_buffer.ptr(ilod, ichunk);
+                        memcpy(prev_row_ptr, main_ptr, csize + 1);
+                        memcpy(prev_row_buffer.ptrw(ilod, ichunk + region_size * (region_size - 1), LODBUfferSection::ZPosPad), main_ptr + csize + 1, csize + 1);
+                    }
+
+                    csize >>= 1;
+                }
+
+                if (reg_ix < data_regions.x - 1) {
+                    const size_t prev_row_next_index = (pool_index + 3) % pool_size;
+                    LODBuffer<hmap_t> &prev_row_next_buffer = *buffer_pool[prev_row_next_index];
+                    csize = chunk_size;
+
+                    for (size_t ilod = 1; ilod < hmap_specs.lods; ++ilod) {
+                        hmap_t *corner_left_pad = prev_row_next_buffer.ptrw(ilod, region_size * (region_size - 1), LODBUfferSection::XNegPad);
+                        corner_left_pad[csize] = *(hmap_buffer.ptr(ilod, region_size - 1) + csize - 1);
+                        csize >>= 1;
+                    }
+                }
+            }
+
+            // Set minmax LODs.
+            size_t rsize = region_size;
+
+            for (size_t ilod = 1; ilod < minmax_specs.lods; ++ilod) {
+                const MinMax *next_ptr = minmax_ptr;
+
+                for (size_t chunk_iz = 0; chunk_iz < rsize; ++chunk_iz) {
+                    for (size_t chunk_ix = 0; chunk_ix < rsize; ++chunk_ix) {
+                        const size_t i00 = chunk_ix + chunk_iz * rsize;
+                        const size_t i10 = i00 + 1;
+                        const size_t i01 = i00 + rsize;
+                        const size_t i11 = i01 + 1;
+                        MinMax h00 = reg_ptr[i00];
+                        MinMax h10 = reg_ptr[i10];
+                        MinMax h01 = reg_ptr[i01];
+                        MinMax h11 = reg_ptr[i11];
+                        hmap_t h = MIN(h00.min, MIN(h10.min, MIN(h01.min, h11.min)));
+                        minmax_ptr->min = h;
+                        h = MAX(h00.max, MAX(h10.max, MAX(h01.max, h11.max)));
+                        minmax_ptr->max = h;
+                        minmax_ptr++;
+                    }
+                }
+
+                rsize >>= 1;
+                reg_ptr = next_ptr;
+            }
+
+            data_file->store_buffer(minmax_buffer.bytes(), minmax_buffer.size());
+            files_pool.set(pool_index, data_file.ptr());
+
+            if (reg_ix == data_regions.x - 1) {
+                csize = chunk_size;
+
+                for (size_t ilod = 1; ilod < hmap_specs.lods; ++ilod) {
+                    for (size_t ichunk = 0; ichunk < region_size; ++ichunk) {
+                        size_t chunk_idx = (ichunk + 1) * region_size - 1;
+                        hmap_t *main_ptr = hmap_buffer.ptrw(ilod, chunk_idx) + csize - 1;
+                        hmap_t *right_pad_ptr = hmap_buffer.ptrw(ilod, chunk_idx, LODBUfferSection::XPosPad);
+
+                        for (size_t i = 0; i <= csize; ++i) {
+                            main_ptr[1] = *main_ptr;
+                            right_pad_ptr[i] = *main_ptr;
+                            main_ptr += csize + 1;
+                        }
+                    }
+
+                    csize >>= 1;
+                }
+
+                const size_t prev_row_index = (pool_index + 2) % pool_size;
+                LODBuffer<hmap_t> &prev_row_buffer = *buffer_pool[prev_row_index];
+                Ref<FileAccess> prev_row_file = files_pool[prev_row_index];
+                prev_row_file->store_buffer(prev_row_buffer.bytes(), prev_row_buffer.size());
+                prev_row_file->close();
+            }
+
+            if (reg_iz == data_regions.y - 1) {
+                csize = chunk_size;
+
+                for (size_t ilod = 1; ilod < hmap_specs.lods; ++ilod) {
+                    for (size_t ichunk = 0; ichunk < region_size; ++ichunk) {
+                        size_t chunk_idx = ichunk + region_size * (region_size - 1);
+                        hmap_t *main_ptr = hmap_buffer.ptrw(ilod, chunk_idx);
+                        memcpy(main_ptr + csize + 1, main_ptr, csize + 1);
+                        memcpy(hmap_buffer.ptrw(ilod, chunk_idx, LODBUfferSection::ZPosPad), main_ptr, csize + 1);
+                    }
+
+                    csize >>= 1;
+                }
+
+                const size_t prev_col_index = (pool_index + pool_size - 1) % pool_size;
+                LODBuffer<hmap_t> &prev_col_buffer = *buffer_pool[prev_col_index];
+                Ref<FileAccess> prev_col_file = files_pool[prev_col_index];
+                prev_col_file->store_buffer(prev_col_buffer.bytes(), prev_col_buffer.size());
+                prev_col_file->close();
+
+                if (reg_ix == data_regions.x - 1) {
+                    data_file->store_buffer(hmap_buffer.bytes(), hmap_buffer.size());
+                    data_file->close();
+                }
+            }
+
+            pool_index = (pool_index + 1) % pool_size;
+        }
+    }
+
+    for (int i = 0; i < region_size + 1; ++i) {
+        memdelete(buffer_pool[i]);
+    }
+
+    load_headers();
+}
+
 Error MapStorage::load_headers() {
     if (directory_path.is_empty()) {
         return ERR_FILE_BAD_PATH;
@@ -53,8 +417,8 @@ Error MapStorage::load_headers() {
                 ERR_CONTINUE_EDMSG(error != OK, vformat("Error (%d) while reading region file %s.", error, file_path));
                 ERR_CONTINUE_EDMSG(fh->value.chunk_size != chunk_size, vformat("Wrong chunk size in region file %s.", file_name));
                 ERR_CONTINUE_EDMSG(fh->value.region_size != region_size, vformat("Wrong region size in region file %s.", file_name));
-                ERR_CONTINUE_EDMSG(fh->value.minmax_lods != minmax_lods, vformat("Wrong number of saved minmax lods in region file %s.", file_name));
-                ERR_CONTINUE_EDMSG(fh->value.hmap_lods != hmap_lods, vformat("Wrong number of saved hmap lods in region file %s.", file_name));
+                ERR_CONTINUE_EDMSG(fh->value.minmax_lods != minmax_specs.lods, vformat("Wrong number of saved minmax lods in region file %s.", file_name));
+                ERR_CONTINUE_EDMSG(fh->value.hmap_lods != hmap_specs.lods, vformat("Wrong number of saved hmap lods in region file %s.", file_name));
                 Region *region = memnew(Region);
                 region->data_access = FileAccess::open(file_path, mode, &error);
                 ERR_CONTINUE_EDMSG(error != OK, vformat("Can`t open stream region data file %s.", file_path));
@@ -76,6 +440,20 @@ Error MapStorage::load_headers() {
 
 bool MapStorage::has_region(const Vector2i &p_region) const {
     return regions.has(p_region);
+}
+
+int MapStorage::get_num_regions() const {
+    return regions.size();
+}
+
+PackedByteArray MapStorage::get_region_hmap_buffer(const Vector2i &p_region) {
+    Region **region_ptr = regions.getptr(p_region);
+    ERR_FAIL_NULL_V_EDMSG(region_ptr, PackedByteArray(), "Region not present in map.");
+    Region *region = *region_ptr;
+
+    if (region->is_hmap_loaded()) {
+
+    }
 }
 
 // bool MapStorage::is_sector_loaded(CellKey p_sector) const {
@@ -350,7 +728,7 @@ void MapStorage::set_chunk_size(int p_size) {
 
         if (size != chunk_size) {
             chunk_size = size;
-            hmap_lods = MIN((int)Math::log2(float(chunk_size)), MAX_LOD_LEVELS);
+            hmap_specs.set_dirty();
             _clear();
             emit_changed();
         }
@@ -368,7 +746,8 @@ void MapStorage::set_region_size(int p_size) {
 
         if (size != region_size) {
             region_size = size;
-            minmax_lods = MIN((int)Math::log2(float(region_size)) + 1, MAX_LOD_LEVELS);
+            hmap_specs.set_dirty();
+            minmax_specs.set_dirty();
             _clear();
             emit_changed();
         }
@@ -445,7 +824,10 @@ void MapStorage::_bind_methods() {
     ClassDB::bind_method(D_METHOD("set_data_locked", "locked"), &MapStorage::set_data_locked);
     ClassDB::bind_method(D_METHOD("is_data_locked"), &MapStorage::is_data_locked);
 //     ClassDB::bind_method(D_METHOD("get_buffer_stat", "buffer", "stat"), &MapStorage::get_buffer_stat);
+
+    ClassDB::bind_method(D_METHOD("store_heightmap_data", "data", "size"), &MapStorage::store_heightmap_data);
     ClassDB::bind_method(D_METHOD("has_region", "region"), &MapStorage::has_region);
+    ClassDB::bind_method(D_METHOD("get_num_regions"), &MapStorage::get_num_regions);
 
     ADD_PROPERTY(PropertyInfo(Variant::STRING, "directory_path", PROPERTY_HINT_DIR), "set_directory_path", "get_directory_path");
     ADD_PROPERTY(PropertyInfo(Variant::INT, "chunk_size", PROPERTY_HINT_RANGE, "2,256,1"), "set_chunk_size", "get_chunk_size");
@@ -473,187 +855,19 @@ void MapStorage::_bind_methods() {
 //     BIND_ENUM_CONSTANT(STAT_BLOCK_COUNT);
 }
 
-void MapStorage::store_heightmap_data(const PackedByteArray &p_data, const Vector2i &p_size) {
-    ERR_FAIL_COND_EDMSG(data_locked, "Failed to store data: data is locked.");
-    ERR_FAIL_COND_EDMSG(p_data.size() != p_size.x * p_size.y, "Incorrect data buffer size.");
-    _clear();
-    const int32_t region_cells = region_size * chunk_size;
-    const Vector2i data_regions = Vector2i((p_size.x + 1) / region_cells, (p_size.y + 1) / region_cells);
-    LODBufferSpecs<MinMax> minmax_specs = LODBufferSpecs<MinMax>(region_size, 1, minmax_lods);
-    LODBuffer<MinMax> minmax_buffer = LODBuffer<MinMax>(minmax_specs);
-    MinMax *minmax_ptr = minmax_buffer.ptrw();
-    LODBufferPool<hmap_t> hmap_pool = LODBufferPool<hmap_t>(chunk_size, region_size, hmap_lods, true);
-
-    for (int reg_iz = 0; reg_iz < data_regions.y; ++reg_iz) {
-        for (int reg_ix = 0; reg_ix < data_regions.x; ++reg_ix) {
-            const CellKey region_key = CellKey(reg_ix, reg_iz);
-            String file_path = vformat("%s_%d_%d.%s", REGION_FILE_BASE_NAME, reg_ix, reg_iz, REGION_FILE_EXTENSION);
-            Error error;
-            Ref<FileAccess> data_file = FileAccess::open(file_path, FileAccess::WRITE, &error);
-            FileHeaderBytes fhb;
-            FileHeader &fh = fhb.value;
-            fh.magic[0] = MAGIC_STRING[0];
-            fh.magic[1] = MAGIC_STRING[1];
-            fh.magic[2] = MAGIC_STRING[2];
-            fh.magic[3] = MAGIC_STRING[3];
-            fh.subheader.presence = REGION_FLAG_HAS_MINMAX | REGION_FLAG_HAS_HMAP;
-            fh.subheader.version = FORMAT_VERSION;
-            fh.subheader.hmap_offset = minmax_buffer.size() + FILE_HEADER_SIZE;
-            fh.endianness = data_file->is_big_endian() ? FORMAT_BIG_ENDIAN : FORMAT_LITTLE_ENDIAN;
-            fh.format = FORMAT_PACKED;
-            fh.minmax_lods = minmax_lods;
-            fh.hmap_lods = hmap_lods;
-            fh.chunk_size = chunk_size;
-            fh.region_size = region_size;
-            data_file->store_buffer(fhb.bytes, FILE_HEADER_SIZE);
-            MinMax *minmax_ptr = minmax_buffer.ptrw();
-            const MinMax *reg_ptr = minmax_ptr;
-            LODBuffer<hmap_t> &hmap_buffer = *hmap_pool.next();
-
-            for (int chunk_iz = 0; chunk_iz < region_size; ++chunk_iz) {
-                for (int chunk_ix = 0; chunk_ix < region_size; ++chunk_ix) {
-                    uint8_t min_h = UINT8_MAX;
-                    uint8_t max_h = 0;
-                    size_t chunk_index = chunk_ix + chunk_iz * region_size;
-                    hmap_t *hmap_ptr = hmap_buffer.ptrw(0, chunk_index);
-                    const hmap_t *chunk_ptr = hmap_ptr;
-
-                    // Set chunk's heights.
-                    for (int cell_iz = 0; cell_iz <= chunk_size; ++cell_iz) {
-                        const size_t z = MIN(cell_iz + chunk_iz * chunk_size + reg_iz * region_cells, p_size.y - 1);
-
-                        for (int cell_ix = 0; cell_ix <= chunk_size; ++cell_ix) {
-                            const size_t x = MIN(cell_ix + chunk_ix * chunk_size + reg_ix * region_cells, p_size.x - 1);
-                            const size_t index = x + z * p_size.x;
-                            const uint8_t h = p_data[index];
-                            min_h = MIN(min_h, h);
-                            max_h = MAX(max_h, h);
-                            *hmap_ptr = h;
-                            hmap_ptr++;
-                        }
-                    }
-
-                    // Fill padding.
-                    hmap_t *h_xneg = hmap_buffer.ptrw(0, chunk_index, LODBUfferSection::XNegPad);
-                    const size_t ixneg = MAX(chunk_ix * chunk_size + reg_ix * region_cells - 1, 0);
-                    hmap_t *h_xpos = hmap_buffer.ptrw(0, chunk_index, LODBUfferSection::XPosPad);
-                    const size_t ixpos = MIN((chunk_ix + 1) * chunk_size + reg_ix * region_cells + 1, p_size.x - 1);
-                    hmap_t *h_zneg = hmap_buffer.ptrw(0, chunk_index, LODBUfferSection::ZNegPad);
-                    const size_t izneg = MAX(chunk_iz * chunk_size + reg_iz * region_cells - 1, 0);
-                    hmap_t *h_zpos = hmap_buffer.ptrw(0, chunk_index, LODBUfferSection::ZPosPad);
-                    const size_t izpos = MIN((chunk_iz + 1) * chunk_size + reg_iz * region_cells + 1, p_size.y - 1); // ????
-
-                    for (int i = 0; i <= chunk_size; ++i) {
-                        const size_t z_x = MIN(i + chunk_iz * chunk_size + reg_iz * region_cells, p_size.y - 1);
-                        *h_xneg = p_data[ixneg + z_x * p_size.x];
-                        *h_xpos = p_data[ixpos + z_x * p_size.x];
-                        const size_t x_z = MIN(i + chunk_ix * chunk_size + reg_ix * region_cells, p_size.x - 1);
-                        *h_zneg = p_data[x_z + izneg * p_size.x];
-                        *h_zpos = p_data[x_z + izpos * p_size.x];
-                    }
-
-                    // Set minmax for this chunk.
-                    minmax_ptr->min = min_h;
-                    minmax_ptr->max = max_h;
-                    minmax_ptr++;
-                    int csize = chunk_size;
-
-                    // Set hmap LODs for main section.
-                    for (int ilod = 1; ilod < hmap_lods; ++ilod) {
-                        hmap_ptr = hmap_buffer.ptrw(ilod, chunk_index);
-                        const hmap_t *next_ptr = hmap_ptr;
-
-                        for (int cell_iz = 0; cell_iz < csize; cell_iz += 2) {
-                            for (int cell_ix = 0; cell_ix < csize; cell_ix += 2) {
-                                int i00 = cell_ix + cell_iz * csize;
-                                int i10 = i00 + 1;
-                                int i01 = i00 + csize;
-                                int i11 = i01 + 1;
-                                uint32_t h = chunk_ptr[i00] + chunk_ptr[i10] + chunk_ptr[i01] + chunk_ptr[11] + 2;
-                                *hmap_ptr = (hmap_t)(h >> 2);
-                                hmap_ptr++;
-                            }
-                        }
-
-                        csize >>= 1;
-                        chunk_ptr = next_ptr;
-                    }
-                }
-            }
-
-            {
-                // Fill paddings for region.
-                int csize = chunk_size;
-                LODBuffer<hmap_t> &prev_col_buffer = *hmap_pool.get_prev_region_col();
-                LODBuffer<hmap_t> &prev_row_buffer = *hmap_pool.get_prev_region_row();
-                size_t prev_col_chunk0 = reg_ix == 0 ? 0 : region_size - 1;
-                // LODBuffer<hmap_t> &prev_row_buffer = *hmap_pool.get_prev_row(reg_iz);
-                // p_row * page_side * specs.block_side * specs.block_side
-
-                for (int ilod = 1; ilod < hmap_lods; ++ilod) {
-                    for (int ichunk = 0; ichunk < region_size; ++ichunk) {
-                //         hmap_t *prev_col = prev_col_buffer.ptrw(ichunk * reg);
-                //         hmap_t *prev_row = prev_row_buffer->pointer;
-                        hmap_t *col = hmap_buffer.ptrw(ilod, ichunk * region_size, LODBUfferSection::XNegPad);
-                //         hmap_t *row = hmap_buffer.ptrw(ilod, ichunk, LODBUfferSection::ZNegPad);
-
-                        for (int icell = 0; icell < chunk_size; ++icell) {
-                //             *col = *prev_col;
-                //             *row = *prev_row;
-                //             col++;
-                //             row++;
-                //             prev_col += chunk_size + 1;
-                //             prev_row++;
-                        }
-
-                //         if (reg_ix != 0) {
-                //             col = hmap_buffer.ptrw(ilod, ichunk * region_size);
-                //             prev_col = prev_col_buffer->ptrw(ilod, ichunk * region_size - 1);
-                //         }
-                    }
-
-                    csize >>= 1;
-                }
-            }
-
-            // Set minmax LODs.
-            int rsize = region_size;
-
-            for (int ilod = 1; ilod < minmax_lods; ++ilod) {
-                const MinMax *next_ptr = minmax_ptr;
-
-                for (int chunk_iz = 0; chunk_iz < rsize; ++chunk_iz) {
-                    for (int chunk_ix = 0; chunk_ix < rsize; ++chunk_ix) {
-                        int i00 = chunk_ix + chunk_iz * rsize;
-                        int i10 = i00 + 1;
-                        int i01 = i00 + rsize;
-                        int i11 = i01 + 1;
-                        MinMax h00 = reg_ptr[i00];
-                        MinMax h10 = reg_ptr[i10];
-                        MinMax h01 = reg_ptr[i01];
-                        MinMax h11 = reg_ptr[i11];
-                        hmap_t h = MIN(h00.min, MIN(h10.min, MIN(h01.min, h11.min)));
-                        minmax_ptr->min = h;
-                        h = MAX(h00.max, MAX(h10.max, MAX(h01.max, h11.max)));
-                        minmax_ptr->max = h;
-                        minmax_ptr++;
-                    }
-                }
-
-                rsize >>= 1;
-                reg_ptr = next_ptr;
-            }
-
-    //         data_file->store_buffer(reinterpret_cast<uint8_t*>(minmax.ptrw()), minmax_size * sizeof(hmap_t));
-    //         data_file->store_buffer(reinterpret_cast<uint8_t*>(hmap_buffer.ptrw()), hmap_buffer_size * sizeof(hmap_t));
-        }
-    }
-}
-
 void MapStorage::_clear() {
     for (KeyValue<CellKey, Region*> &kv : regions) {
         Region *region = kv.value;
         memdelete(region->header);
+
+        if (region->minmax) {
+            memdelete(region->minmax);
+        }
+
+        if (region->hmap) {
+            memdelete(region->hmap);
+        }
+
         memdelete(region);
     }
 
@@ -915,15 +1129,15 @@ void MapStorage::_clear() {
 //     }
 // }
 
-MapStorage::Region *MapStorage::_create_region(CellKey p_region_key) {
-    Region *region = memnew(Region);
-    Subheader *header = memnew(Subheader);
-    memset(header, 0, SUBHEADER_SIZE);
-    header->version = FORMAT_VERSION;
-    region->header = header;
-    regions[p_region_key] = region;
-    return region;
-}
+// MapStorage::Region *MapStorage::_create_region(CellKey p_region_key) {
+//     Region *region = memnew(Region);
+//     Subheader *header = memnew(Subheader);
+//     memset(header, 0, SUBHEADER_SIZE);
+//     header->version = FORMAT_VERSION;
+//     region->header = header;
+//     regions[p_region_key] = region;
+//     return region;
+// }
 
 // float MapStorage::_calc_request_priority(const Vector3 &p_chunk_pos, bool p_in_frustum) {
 //     float distance = viewer_pos.distance_to(p_chunk_pos);
