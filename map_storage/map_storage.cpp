@@ -22,41 +22,42 @@ const String MapStorage::REGION_FILE_EXTENSION("map");
 const String MapStorage::REGION_FILE_FORMAT(REGION_FILE_BASE_NAME + "%d_%d." + REGION_FILE_EXTENSION);
 
 void MapStorage::store_heightmap_data(const PackedByteArray &p_data, const Vector2i &p_size) {
+    ERR_FAIL_COND_EDMSG(directory_path.is_empty(), "Empty directory path.");
+    ERR_FAIL_COND_EDMSG(!DirAccess::exists(directory_path), "Storage directory does not exist.");
     ERR_FAIL_COND_EDMSG(data_locked, "Failed to store data: data is locked.");
     ERR_FAIL_COND_EDMSG(p_data.size() != p_size.x * p_size.y, "Incorrect data buffer size.");
-    _clear();
+    clear();
 
     if (minmax_specs.is_dirty()) {
         int minmax_lods = MIN((int)Math::log2(float(region_size)) + 1, MAX_LOD_LEVELS);
-        minmax_specs.config(region_size, 1, minmax_lods, sizeof(MinMax));
+        minmax_specs.config(region_size, 1, minmax_lods);
     }
 
     if (hmap_specs.is_dirty()) {
         int hmap_lods = MIN((int)Math::log2(float(chunk_size)), MAX_LOD_LEVELS);
-        hmap_specs.config(chunk_size, region_size * region_size, hmap_lods, sizeof(hmap_t), true);
+        hmap_specs.config(chunk_size, region_size * region_size, hmap_lods, true);
     }
 
     const int32_t region_cells = region_size * chunk_size;
     const Vector2i data_regions = Vector2i((p_size.x + 1) / region_cells, (p_size.y + 1) / region_cells);
     LODBuffer<MinMax> minmax_buffer = LODBuffer<MinMax>(minmax_specs);
-    MinMax *minmax_ptr = minmax_buffer.ptrw();
-    size_t pool_size = region_size + 2;
+    const size_t pool_size = data_regions.x + 2;
     Vector<Ref<FileAccess>> files_pool;
     files_pool.resize(pool_size);
     size_t pool_index = 0;
     Vector<LODBuffer<hmap_t> *> buffer_pool;
     buffer_pool.resize(pool_size);
 
-    for (int i = 0; i < region_size + 1; ++i) {
+    for (int i = 0; i < pool_size; ++i) {
         buffer_pool.set(i, memnew(LODBuffer<hmap_t>(hmap_specs)));
     }
 
     for (int reg_iz = 0; reg_iz < data_regions.y; ++reg_iz) {
         for (int reg_ix = 0; reg_ix < data_regions.x; ++reg_ix) {
             const CellKey region_key = CellKey(reg_ix, reg_iz);
-            String file_path = vformat("%s_%d_%d.%s", REGION_FILE_BASE_NAME, reg_ix, reg_iz, REGION_FILE_EXTENSION);
+            String file_path = vformat(REGION_FILE_FORMAT, reg_ix, reg_iz);
             Error error;
-            Ref<FileAccess> data_file = FileAccess::open(file_path, FileAccess::WRITE, &error);
+            Ref<FileAccess> data_file = FileAccess::open(directory_path.path_join(file_path), FileAccess::WRITE, &error);
             FileHeaderBytes fhb;
             FileHeader &fh = fhb.value;
             fh.magic[0] = MAGIC_STRING[0];
@@ -112,18 +113,18 @@ void MapStorage::store_heightmap_data(const PackedByteArray &p_data, const Vecto
 
                     for (int i = 0; i <= chunk_size; ++i) {
                         const size_t z_x = MIN(i + chunk_iz * chunk_size + reg_iz * region_cells, p_size.y - 1);
-                        *h_xneg = p_data[ixneg + z_x * p_size.x];
-                        *h_xpos = p_data[ixpos + z_x * p_size.x];
+                        h_xneg[i] = p_data[ixneg + z_x * p_size.x];
+                        h_xpos[i] = p_data[ixpos + z_x * p_size.x];
                         const size_t x_z = MIN(i + chunk_ix * chunk_size + reg_ix * region_cells, p_size.x - 1);
-                        *h_zneg = p_data[x_z + izneg * p_size.x];
-                        *h_zpos = p_data[x_z + izpos * p_size.x];
+                        h_zneg[i] = p_data[x_z + izneg * p_size.x];
+                        h_zpos[i] = p_data[x_z + izpos * p_size.x];
                     }
 
                     // Set minmax for this chunk.
                     minmax_ptr->min = min_h;
                     minmax_ptr->max = max_h;
                     minmax_ptr++;
-                    int csize = chunk_size;
+                    int csize = chunk_size >> 1;
 
                     // Set hmap LODs.
                     for (size_t ilod = 1; ilod < hmap_specs.lods; ++ilod) {
@@ -187,7 +188,7 @@ void MapStorage::store_heightmap_data(const PackedByteArray &p_data, const Vecto
             }
 
             // Fill paddings for region.
-            size_t csize = chunk_size;
+            size_t csize = chunk_size >> 1;
 
             if (reg_ix == 0) {
                 for (size_t ilod = 1; ilod < hmap_specs.lods; ++ilod) {
@@ -228,7 +229,7 @@ void MapStorage::store_heightmap_data(const PackedByteArray &p_data, const Vecto
                 if (reg_iz != 0) {
                     const size_t prev_row_prev_index = (pool_index + 1) % pool_size;
                     LODBuffer<hmap_t> &prev_row_prev_buffer = *buffer_pool[prev_row_prev_index];
-                    csize = chunk_size;
+                    csize = chunk_size >> 1;
 
                     for (size_t ilod = 1; ilod < hmap_specs.lods; ++ilod) {
                         const hmap_t *main = hmap_buffer.ptr(ilod, 0);
@@ -242,13 +243,13 @@ void MapStorage::store_heightmap_data(const PackedByteArray &p_data, const Vecto
                         csize >>= 1;
                     }
 
-                    Ref<FileAccess> prev_row_prev_file = files_pool[prev_row_prev_index];
+                    const Ref<FileAccess> &prev_row_prev_file = files_pool[prev_row_prev_index];
                     prev_row_prev_file->store_buffer(prev_row_prev_buffer.bytes(), prev_row_prev_buffer.size());
                     prev_row_prev_file->close();
                 }
             }
 
-            csize = chunk_size;
+            csize = chunk_size >> 1;
 
             if (reg_iz == 0) {
                 for (size_t ilod = 1; ilod < hmap_specs.lods; ++ilod) {
@@ -281,7 +282,7 @@ void MapStorage::store_heightmap_data(const PackedByteArray &p_data, const Vecto
                 if (reg_ix < data_regions.x - 1) {
                     const size_t prev_row_next_index = (pool_index + 3) % pool_size;
                     LODBuffer<hmap_t> &prev_row_next_buffer = *buffer_pool[prev_row_next_index];
-                    csize = chunk_size;
+                    csize = chunk_size >> 1;
 
                     for (size_t ilod = 1; ilod < hmap_specs.lods; ++ilod) {
                         hmap_t *corner_left_pad = prev_row_next_buffer.ptrw(ilod, region_size * (region_size - 1), LODBUfferSection::XNegPad);
@@ -292,13 +293,13 @@ void MapStorage::store_heightmap_data(const PackedByteArray &p_data, const Vecto
             }
 
             // Set minmax LODs.
-            size_t rsize = region_size;
+            size_t rsize = region_size >> 1;
 
             for (size_t ilod = 1; ilod < minmax_specs.lods; ++ilod) {
                 const MinMax *next_ptr = minmax_ptr;
 
-                for (size_t chunk_iz = 0; chunk_iz < rsize; ++chunk_iz) {
-                    for (size_t chunk_ix = 0; chunk_ix < rsize; ++chunk_ix) {
+                for (size_t chunk_iz = 0; chunk_iz < rsize; chunk_iz += 2) {
+                    for (size_t chunk_ix = 0; chunk_ix < rsize; chunk_ix += 2) {
                         const size_t i00 = chunk_ix + chunk_iz * rsize;
                         const size_t i10 = i00 + 1;
                         const size_t i01 = i00 + rsize;
@@ -320,10 +321,10 @@ void MapStorage::store_heightmap_data(const PackedByteArray &p_data, const Vecto
             }
 
             data_file->store_buffer(minmax_buffer.bytes(), minmax_buffer.size());
-            files_pool.set(pool_index, data_file.ptr());
+            files_pool.write[pool_index] = data_file;
 
             if (reg_ix == data_regions.x - 1) {
-                csize = chunk_size;
+                csize = chunk_size >> 1;
 
                 for (size_t ilod = 1; ilod < hmap_specs.lods; ++ilod) {
                     for (size_t ichunk = 0; ichunk < region_size; ++ichunk) {
@@ -341,15 +342,18 @@ void MapStorage::store_heightmap_data(const PackedByteArray &p_data, const Vecto
                     csize >>= 1;
                 }
 
-                const size_t prev_row_index = (pool_index + 2) % pool_size;
-                LODBuffer<hmap_t> &prev_row_buffer = *buffer_pool[prev_row_index];
-                Ref<FileAccess> prev_row_file = files_pool[prev_row_index];
-                prev_row_file->store_buffer(prev_row_buffer.bytes(), prev_row_buffer.size());
-                prev_row_file->close();
+                if (reg_iz != 0) {
+                    const size_t prev_row_index = (pool_index + 2) % pool_size;
+                    LODBuffer<hmap_t> &prev_row_buffer = *buffer_pool[prev_row_index];
+                    const Ref<FileAccess> &prev_row_file = files_pool[prev_row_index];
+                    prev_row_file->store_buffer(prev_row_buffer.bytes(), prev_row_buffer.size());
+                    prev_row_file->close();
+                }
+
             }
 
             if (reg_iz == data_regions.y - 1) {
-                csize = chunk_size;
+                csize = chunk_size >> 1;
 
                 for (size_t ilod = 1; ilod < hmap_specs.lods; ++ilod) {
                     for (size_t ichunk = 0; ichunk < region_size; ++ichunk) {
@@ -362,11 +366,13 @@ void MapStorage::store_heightmap_data(const PackedByteArray &p_data, const Vecto
                     csize >>= 1;
                 }
 
-                const size_t prev_col_index = (pool_index + pool_size - 1) % pool_size;
-                LODBuffer<hmap_t> &prev_col_buffer = *buffer_pool[prev_col_index];
-                Ref<FileAccess> prev_col_file = files_pool[prev_col_index];
-                prev_col_file->store_buffer(prev_col_buffer.bytes(), prev_col_buffer.size());
-                prev_col_file->close();
+                if (reg_ix != 0) {
+                    const size_t prev_col_index = (pool_index + pool_size - 1) % pool_size;
+                    LODBuffer<hmap_t> &prev_col_buffer = *buffer_pool[prev_col_index];
+                    const Ref<FileAccess> &prev_col_file = files_pool[prev_col_index];
+                    prev_col_file->store_buffer(prev_col_buffer.bytes(), prev_col_buffer.size());
+                    prev_col_file->close();
+                }
 
                 if (reg_ix == data_regions.x - 1) {
                     data_file->store_buffer(hmap_buffer.bytes(), hmap_buffer.size());
@@ -378,9 +384,12 @@ void MapStorage::store_heightmap_data(const PackedByteArray &p_data, const Vecto
         }
     }
 
-    for (int i = 0; i < region_size + 1; ++i) {
+    for (int i = 0; i < pool_size; ++i) {
         memdelete(buffer_pool[i]);
     }
+
+    files_pool.clear();
+    buffer_pool.clear();
 
     load_headers();
 }
@@ -397,10 +406,15 @@ Error MapStorage::load_headers() {
     ERR_FAIL_COND_V_EDMSG(error != OK, error, "Error while opening MapStorage directory.");
     error = dir->list_dir_begin();
     ERR_FAIL_COND_V_EDMSG(error != OK, error, "Can't iterate over files in MapStorage directory.");
-    String file_name = dir->get_next();
     const int mode = data_locked ? FileAccess::READ : FileAccess::READ_WRITE;
 
-    while (!file_name.is_empty()) {
+    while (true) {
+        String file_name = dir->get_next();
+
+        if (file_name.is_empty()) {
+            break;
+        }
+
         if (!dir->current_is_dir() && file_name.begins_with(REGION_FILE_BASE_NAME) && file_name.get_extension() == REGION_FILE_EXTENSION) {
             PackedStringArray parts = file_name.get_basename().split("_", false);
 
@@ -430,12 +444,51 @@ Error MapStorage::load_headers() {
                 regions[CellKey(x, z)] = region;
             }
         }
-
-        file_name = dir->get_next();
     }
 
     dir->list_dir_end();
     return OK;
+}
+
+void MapStorage::clear() {
+    for (KeyValue<CellKey, Region*> &kv : regions) {
+        Region *region = kv.value;
+        memdelete(region->header);
+        region->data_access->close();
+        region->query_access->close();
+
+        if (region->minmax) {
+            memdelete(region->minmax);
+        }
+
+        if (region->hmap) {
+            memdelete(region->hmap);
+        }
+
+        memdelete(region);
+    }
+
+    regions.clear();
+
+//     if (minmax_buffer) {
+//         memdelete(minmax_buffer);
+//     }
+
+//     if (hmap_buffer) {
+//         memdelete(hmap_buffer);
+//     }
+
+//     minmax_trackers.clear();
+
+//     for (int i = 0; i < textures_trackers.size(); ++i) {
+//         for (KeyValue<NodeKey, Tracker> &kv : textures_trackers.get(i)) {
+//             Tracker &tracker = kv.value;
+//             TextureData *td = (TextureData *)tracker.pointer;
+//             memdelete(td);
+//         }
+//     }
+
+//     textures_trackers.clear();
 }
 
 bool MapStorage::has_region(const Vector2i &p_region) const {
@@ -452,8 +505,49 @@ PackedByteArray MapStorage::get_region_hmap_buffer(const Vector2i &p_region) {
     Region *region = *region_ptr;
 
     if (region->is_hmap_loaded()) {
-
+        return region->hmap->to_byte_array();
+    } else {
+        Ref<FileAccess> file = region->query_access;
+        file->seek(region->header->hmap_offset);
+        region->hmap = memnew(LODBuffer<hmap_t>(hmap_specs));
+        LODBuffer<hmap_t> &hmap = *region->hmap;
+        file->get_buffer(hmap.bytesw(), hmap.size());
+        region->set_hmap_loaded(true);
+        return hmap.to_byte_array();
     }
+}
+
+PackedInt32Array MapStorage::get_chunk_hmap(const Vector2i &p_region, const Vector2i &p_chunk) {
+    Region **region_ptr = regions.getptr(p_region);
+    ERR_FAIL_NULL_V_EDMSG(region_ptr, PackedInt32Array(), "Region not present in map.");
+    Region *region = *region_ptr;
+
+    if (!region->is_hmap_loaded()) {
+        Ref<FileAccess> file = region->query_access;
+        file->seek(region->header->hmap_offset);
+        region->hmap = memnew(LODBuffer<hmap_t>(hmap_specs));
+        LODBuffer<hmap_t> &hmap = *region->hmap;
+        file->get_buffer(hmap.bytesw(), hmap.size());
+        region->set_hmap_loaded(true);
+    }
+
+    size_t chunk_idx = p_chunk.x + p_chunk.y * region_size;
+    const hmap_t *hmap_ptr = region->hmap->ptr(0, chunk_idx);
+    PackedInt32Array res;
+    res.resize(chunk_size * chunk_size);
+    int *res_ptr = res.ptrw();
+
+    for (int iz = 0; iz < chunk_size; ++iz) {
+        for (int ix = 0; ix < chunk_size; ++ix) {
+            *res_ptr = (int)*hmap_ptr;
+            res_ptr++;
+            hmap_ptr++;
+        }
+
+        hmap_ptr++;
+    }
+
+    return res;
 }
 
 // bool MapStorage::is_sector_loaded(CellKey p_sector) const {
@@ -712,7 +806,7 @@ bool MapStorage::is_directory_set() const {
 
 void MapStorage::set_directory_path(const String &p_path) {
     directory_path = p_path;
-    _clear();
+    clear();
     emit_signal(path_changed);
 }
 
@@ -729,7 +823,7 @@ void MapStorage::set_chunk_size(int p_size) {
         if (size != chunk_size) {
             chunk_size = size;
             hmap_specs.set_dirty();
-            _clear();
+            clear();
             emit_changed();
         }
     }
@@ -748,7 +842,7 @@ void MapStorage::set_region_size(int p_size) {
             region_size = size;
             hmap_specs.set_dirty();
             minmax_specs.set_dirty();
-            _clear();
+            clear();
             emit_changed();
         }
     }
@@ -853,43 +947,6 @@ void MapStorage::_bind_methods() {
 //     BIND_ENUM_CONSTANT(STAT_AVAILABLE_BYTES);
 //     BIND_ENUM_CONSTANT(STAT_BLOCK_SIZE);
 //     BIND_ENUM_CONSTANT(STAT_BLOCK_COUNT);
-}
-
-void MapStorage::_clear() {
-    for (KeyValue<CellKey, Region*> &kv : regions) {
-        Region *region = kv.value;
-        memdelete(region->header);
-
-        if (region->minmax) {
-            memdelete(region->minmax);
-        }
-
-        if (region->hmap) {
-            memdelete(region->hmap);
-        }
-
-        memdelete(region);
-    }
-
-//     if (minmax_buffer) {
-//         memdelete(minmax_buffer);
-//     }
-
-//     if (hmap_buffer) {
-//         memdelete(hmap_buffer);
-//     }
-
-//     minmax_trackers.clear();
-
-//     for (int i = 0; i < textures_trackers.size(); ++i) {
-//         for (KeyValue<NodeKey, Tracker> &kv : textures_trackers.get(i)) {
-//             Tracker &tracker = kv.value;
-//             TextureData *td = (TextureData *)tracker.pointer;
-//             memdelete(td);
-//         }
-//     }
-
-//     textures_trackers.clear();
 }
 
 // void MapStorage::_process_requests(void *p_storage) {
@@ -1390,7 +1447,7 @@ MapStorage::MapStorage() {
 
 MapStorage::~MapStorage() {
     // stop_io();
-    _clear();
+    clear();
     // memdelete(io_queue);
     // memdelete(io_result);
 

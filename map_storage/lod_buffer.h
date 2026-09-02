@@ -46,7 +46,7 @@ private:
     bool dirty = true;
 
 public:
-    void config(size_t p_block_side, size_t p_pages, int p_lods, size_t p_type_size, bool p_use_padding = false) {
+    void config(size_t p_block_side, size_t p_pages, int p_lods, bool p_use_padding = false) {
         if (lod_offsets) {
             memfree(lod_offsets);
         }
@@ -57,10 +57,10 @@ public:
 
         block_side = p_block_side;
         pages = p_pages;
+        lods = p_lods;
         use_padding = p_use_padding;
         page_size = use_padding ? lod_geom_expand_sqr(block_side * block_side, lods) + lod_geom_expand(6 * block_side, lods) + 5 * lods
             : lod_geom_expand_sqr(block_side * block_side, lods);
-        size_t total_size = page_size * pages * p_type_size;
         lod_offsets = (size_t*)memalloc((lods + 1) * sizeof(size_t));
         lod_sides = (size_t*)memalloc(lods * sizeof(size_t));
 
@@ -115,8 +115,8 @@ class LODBuffer {
     friend class MapStorage;
 
 private:
-    T *buffer;
-    const LODBufferSpecs specs;
+    T *buffer = nullptr;
+    const LODBufferSpecs &specs;
 
 public:
     LODBuffer(const LODBufferSpecs &p_specs) : specs(p_specs)
@@ -128,6 +128,7 @@ public:
     ~LODBuffer() {
         if (buffer) {
             memfree(buffer);
+            buffer = nullptr;
         }
     }
 
@@ -140,6 +141,7 @@ public:
 	_FORCE_INLINE_ const T *ptr() const { return buffer; }
     _FORCE_INLINE_ T *ptrw() { return buffer; }
     _FORCE_INLINE_ const uint8_t *bytes() const { return reinterpret_cast<uint8_t *>(buffer); }
+    _FORCE_INLINE_ uint8_t *bytesw() const { return reinterpret_cast<uint8_t *>(buffer); }
 
     const T *ptr(size_t p_lod, size_t p_page, LODBUfferSection p_section = LODBUfferSection::Main) const {
         ERR_FAIL_INDEX_V_EDMSG(p_lod, specs.lods, nullptr, "LOD out of range.");
@@ -155,7 +157,7 @@ public:
     }
 
     T *ptrw(size_t p_lod, size_t p_page, LODBUfferSection p_section = LODBUfferSection::Main) {
-        ERR_FAIL_INDEX_V_EDMSG(p_lod, specs.lods, nullptr, "LOD out of range.");
+        ERR_FAIL_INDEX_V_EDMSG(p_lod, specs.lods, nullptr, vformat("LOD out of range (Requested: %d; Max: %d).", p_lod, specs.lods - 1));
         ERR_FAIL_INDEX_V_EDMSG(p_page, specs.pages, nullptr, "Page out of range.");
         size_t index = specs.lod_offsets[p_lod] + specs.page_size * p_page;
 

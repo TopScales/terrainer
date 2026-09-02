@@ -130,10 +130,6 @@ private:
     static constexpr char unsigned MAGIC_STRING[MAGIC_SIZE] = {'T', 'E', 'R', 'R'};
     // static const size_t MINMAX_OFFSET = HEADER_SIZE;
 
-    static const String REGION_FILE_BASE_NAME;
-    static const String REGION_FILE_EXTENSION;
-    static const String REGION_FILE_FORMAT;
-
     // static constexpr float CLEANUP_BUFFER_UTILIZATION = 0.8f;
     // static constexpr float BUFFER_EXTRA_ALLOCATION_FACTOR = 1.25f;
 
@@ -296,28 +292,31 @@ private:
         LODBuffer<hmap_t> *hmap = nullptr;
 
         bool is_minmax_loaded() const {
-            Status st = status.load();
-            return st.minmax == LOADED;
+            return status.minmax == LOADED;
         }
         bool is_hmap_loaded() const {
-            Status st = status.load(std::memory_order_acquire);
-            return st.hmap == LOADED;
+            return status.hmap == LOADED;
+        }
+        bool is_minmax_awaiting() const {
+            return status.minmax != LOADED && status.minmax != UNLOADED;
+        }
+        bool is_hmap_awaiting() const {
+            return status.hmap != LOADED && status.hmap != UNLOADED;
         }
         void set_minmax_loaded(bool p_loaded) {
-            Status expected = status.load(std::memory_order_relaxed);
-            Status desired;
             StatusEnum new_status = p_loaded ? LOADED : UNLOADED;
-
-            do {
-                desired = expected;
-                desired.minmax = new_status;
-            } while (!status.compare_exchange_weak(expected, desired, std::memory_order_release, std::memory_order_acquire));
+            status.minmax = new_status;
+        }
+        void set_hmap_loaded(bool p_loaded) {
+            StatusEnum new_status = p_loaded ? LOADED : UNLOADED;
+            status.hmap = new_status;
         }
 
     private:
         enum StatusEnum : uint8_t {
             UNLOADED,
             LOADED,
+            LOADING,
             LOAD_REQUESTED,
             SAVE_REQUESTED
         };
@@ -327,9 +326,7 @@ private:
             StatusEnum hmap;
             StatusEnum splat;
             StatusEnum meta;
-        };
-
-        std::atomic<Status> status{ Status{UNLOADED, UNLOADED} };
+        } status;
     };
 //     struct Tracker {
 //         void *pointer;
@@ -454,7 +451,6 @@ private:
 //     Ref<Texture2DArrayRD> heightmap_texture;
 //     real_t hmap_buffer_size_factor = 0.5;
 
-    void _clear();
     _FORCE_INLINE_ bool _is_format_correct(Ref<FileAccess> &p_file) const;
 //     static void _process_requests(void *p_storage);
 //     _FORCE_INLINE_ void _add_request(const NodeKey &p_key, Tracker *p_tracker, uint16_t p_data_type, uint16_t p_lod);
@@ -486,11 +482,17 @@ public:
     static const int MAX_LOD_LEVELS = 15;
     static const StringName path_changed;
 
+    static const String REGION_FILE_BASE_NAME;
+    static const String REGION_FILE_EXTENSION;
+    static const String REGION_FILE_FORMAT;
+
     void store_heightmap_data(const PackedByteArray &p_data, const Vector2i &p_size);
     Error load_headers();
+    void clear();
     bool has_region(const Vector2i &p_region) const;
     int get_num_regions() const;
     PackedByteArray get_region_hmap_buffer(const Vector2i &p_region);
+    PackedInt32Array get_chunk_hmap(const Vector2i &p_region, const Vector2i &p_chunk);
 //     bool is_sector_loaded(CellKey p_sector) const;
 //     void load_minmax(CellKey p_sector, bool p_in_frustum);
 //     void get_minmax(const NodeKey &p_key, int p_lod, hmap_t &r_min, hmap_t &r_max, bool &r_has_data) const;
