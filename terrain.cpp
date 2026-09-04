@@ -31,14 +31,14 @@
 
 using namespace Terrainer;
 
-// void Terrain::set_camera(Camera3D *p_camera) {
-// 	if (p_camera != camera) {
-// 		camera = p_camera;
-// 		far_view = -1.0;
-// 	}
+void Terrain::set_camera(Camera3D *p_camera) {
+	if (p_camera != camera) {
+		camera = p_camera;
+		far_view = -1.0;
+	}
 
-// 	use_viewport_camera = camera == nullptr;
-// }
+	use_viewport_camera = camera == nullptr;
+}
 
 void Terrain::set_storage(const Ref<MapStorage> &p_storage) {
 	if (storage.is_valid()) {
@@ -70,7 +70,7 @@ void Terrain::set_map_scale(const Vector3 &p_scale) {
 
 	if (storage.is_valid()) {
 		_set_update_distance_tolerance_squared();
-		// quad_tree.set_map_info(storage->get_chunk_size(), storage->get_region_size(), world_regions, map_scale);
+		quad_tree.set_map_info(storage->get_chunk_size(), storage->get_region_size(), world_regions, map_scale);
 		_set_lod_levels();
 	}
 
@@ -81,19 +81,19 @@ Vector3 Terrain::get_map_scale() const {
 	return map_scale;
 }
 
-// void Terrain::set_world_regions(const Vector2i &p_regions) {
-// 	ERR_FAIL_COND_EDMSG(p_regions.x <= 0 || p_regions.y <= 0, "World regions must be positive.");
-// 	world_regions = p_regions;
+void Terrain::set_world_regions(const Vector2i &p_regions) {
+	ERR_FAIL_COND_EDMSG(p_regions.x <= 0 || p_regions.y <= 0, "World regions must be positive.");
+	world_regions = p_regions;
 
-// 	if (storage.is_valid()) {
-// 		quad_tree.set_map_info(storage->get_chunk_size(), storage->get_region_size(), world_regions, map_scale);
-// 		_set_lod_levels();
-// 	}
-// }
+	if (storage.is_valid()) {
+		quad_tree.set_map_info(storage->get_chunk_size(), storage->get_region_size(), world_regions, map_scale);
+		_set_lod_levels();
+	}
+}
 
-// Vector2i Terrain::get_world_regions() const {
-// 	return world_regions;
-// }
+Vector2i Terrain::get_world_regions() const {
+	return world_regions;
+}
 
 // void Terrain::set_material(const Ref<ShaderMaterial> &p_material) {
 // 	material = p_material;
@@ -152,24 +152,24 @@ Vector3 Terrain::get_map_scale() const {
 // 	return material;
 // }
 
-// void Terrain::set_lod_detailed_chunks_radius(int p_radius) {
-// 	lod_detailed_chunks_radius = p_radius;
-// 	_set_lod_levels();
-// }
+void Terrain::set_lod_detailed_chunks_radius(int p_radius) {
+	lod_detailed_chunks_radius = p_radius;
+	_set_lod_levels();
+}
 
-// int Terrain::get_lod_detailed_chunks_radius() const {
-// 	return lod_detailed_chunks_radius;
-// }
+int Terrain::get_lod_detailed_chunks_radius() const {
+	return lod_detailed_chunks_radius;
+}
 
-// void Terrain::set_lod_distance_ratio(real_t p_ratio) {
-// 	ERR_FAIL_COND_EDMSG(p_ratio < 1.0, "LOD level distance ratio must be at least 1.");
-// 	quad_tree.lod_distance_ratio = p_ratio;
-// 	_set_lod_levels();
-// }
+void Terrain::set_lod_distance_ratio(real_t p_ratio) {
+	ERR_FAIL_COND_EDMSG(p_ratio < 1.0, "LOD level distance ratio must be at least 1.");
+	quad_tree.lod_distance_ratio = p_ratio;
+	_set_lod_levels();
+}
 
-// real_t Terrain::get_lod_distance_ratio() const {
-// 	return quad_tree.lod_distance_ratio;
-// }
+real_t Terrain::get_lod_distance_ratio() const {
+	return quad_tree.lod_distance_ratio;
+}
 
 // int Terrain::info_get_lod_levels() const {
 // 	return quad_tree.lod_levels;
@@ -251,14 +251,14 @@ void Terrain::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_storage"), &Terrain::get_storage);
 	ClassDB::bind_method(D_METHOD("set_map_scale", "scale"), &Terrain::set_map_scale);
 	ClassDB::bind_method(D_METHOD("get_map_scale"), &Terrain::get_map_scale);
-// 	ClassDB::bind_method(D_METHOD("set_world_regions", "regions"), &Terrain::set_world_regions);
-// 	ClassDB::bind_method(D_METHOD("get_world_regions"), &Terrain::get_world_regions);
-// 	ClassDB::bind_method(D_METHOD("set_material", "material"), &Terrain::set_material);
-// 	ClassDB::bind_method(D_METHOD("get_material"), &Terrain::get_material);
-// 	ClassDB::bind_method(D_METHOD("set_lod_detailed_chunks_radius", "radius"), &Terrain::set_lod_detailed_chunks_radius);
-// 	ClassDB::bind_method(D_METHOD("get_lod_detailed_chunks_radius"), &Terrain::get_lod_detailed_chunks_radius);
-// 	ClassDB::bind_method(D_METHOD("set_lod_distance_ratio", "ratio"), &Terrain::set_lod_distance_ratio);
-// 	ClassDB::bind_method(D_METHOD("get_lod_distance_ratio"), &Terrain::get_lod_distance_ratio);
+	ClassDB::bind_method(D_METHOD("set_world_regions", "regions"), &Terrain::set_world_regions);
+	ClassDB::bind_method(D_METHOD("get_world_regions"), &Terrain::get_world_regions);
+	// 	ClassDB::bind_method(D_METHOD("set_material", "material"), &Terrain::set_material);
+	// 	ClassDB::bind_method(D_METHOD("get_material"), &Terrain::get_material);
+	ClassDB::bind_method(D_METHOD("set_lod_detailed_chunks_radius", "radius"), &Terrain::set_lod_detailed_chunks_radius);
+	ClassDB::bind_method(D_METHOD("get_lod_detailed_chunks_radius"), &Terrain::get_lod_detailed_chunks_radius);
+	ClassDB::bind_method(D_METHOD("set_lod_distance_ratio", "ratio"), &Terrain::set_lod_distance_ratio);
+	ClassDB::bind_method(D_METHOD("get_lod_distance_ratio"), &Terrain::get_lod_distance_ratio);
 
 // 	ClassDB::bind_method(D_METHOD("info_get_lod_levels"), &Terrain::info_get_lod_levels);
 // 	ClassDB::bind_method(D_METHOD("info_get_lod_nodes_count", "level"), &Terrain::info_get_lod_nodes_count);
@@ -269,12 +269,12 @@ void Terrain::_bind_methods() {
 
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "storage", PROPERTY_HINT_RESOURCE_TYPE, "MapStorage"), "set_storage", "get_storage");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "map_scale"), "set_map_scale", "get_map_scale");
-// 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "world_regions"), "set_world_regions", "get_world_regions");
+	ADD_PROPERTY(PropertyInfo(Variant::VECTOR2I, "world_regions"), "set_world_regions", "get_world_regions");
 // 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "material", PROPERTY_HINT_RESOURCE_TYPE, "ShaderMaterial"), "set_material", "get_material");
 
-// 	ADD_GROUP("LOD", "lod_");
-// 	ADD_PROPERTY(PropertyInfo(Variant::INT, "lod_detailed_chunks_radius", PROPERTY_HINT_RANGE, "1,16"), "set_lod_detailed_chunks_radius", "get_lod_detailed_chunks_radius");
-// 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "lod_distance_ratio", PROPERTY_HINT_RANGE, "1.5,10.0,0.1"), "set_lod_distance_ratio", "get_lod_distance_ratio");
+	ADD_GROUP("LOD", "lod_");
+	ADD_PROPERTY(PropertyInfo(Variant::INT, "lod_detailed_chunks_radius", PROPERTY_HINT_RANGE, "1,16"), "set_lod_detailed_chunks_radius", "get_lod_detailed_chunks_radius");
+	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "lod_distance_ratio", PROPERTY_HINT_RANGE, "1.5,10.0,0.1"), "set_lod_distance_ratio", "get_lod_distance_ratio");
 
 // 	ADD_GROUP("Debug", "debug_");
 // 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "debug_nodes_aabb_enabled"), "set_debug_nodes_aabb_enabled", "is_debug_nodes_aabb_enabled");
@@ -370,60 +370,60 @@ void Terrain::_update_viewer(double p_delta) {
 		_set_lod_levels();
 	}
 
-	// Vector3 prev_pos = viewer_transform.origin - quad_tree.world_offset;
+	Vector3 prev_pos = viewer_transform.origin - quad_tree.world_offset;
 
-	// if (dirty) {
-	// 	viewer_transform = camera->get_global_transform();
-	// 	quad_tree.frustum = camera->get_frustum();
-	// } else {
-	// 	Transform3D cam_xform = camera->get_global_transform();
+	if (dirty) {
+		viewer_transform = camera->get_global_transform();
+		quad_tree.frustum = camera->get_frustum();
+	} else {
+		Transform3D cam_xform = camera->get_global_transform();
 
-	// 	if (cam_xform.origin.distance_squared_to(viewer_transform.origin) > update_distance_tolerance_squared || !cam_xform.basis.get_euler().is_equal_approx(viewer_transform.basis.get_euler())) {
-	// 		viewer_transform = cam_xform;
-	// 		quad_tree.frustum = camera->get_frustum();
-	// 		dirty = true;
-	// 	}
-	// }
+		if (cam_xform.origin.distance_squared_to(viewer_transform.origin) > update_distance_tolerance_squared || !cam_xform.basis.get_euler().is_equal_approx(viewer_transform.basis.get_euler())) {
+			viewer_transform = cam_xform;
+			quad_tree.frustum = camera->get_frustum();
+			dirty = true;
+		}
+	}
 
-	// if (dirty) {
-	// 	Vector3 pos = viewer_transform.origin - quad_tree.world_offset;
-	// 	Vector3 vel = pos.direction_to(prev_pos) / p_delta;
-	// 	Vector3 forward = viewer_transform.basis.get_column(2);
-	// 	storage->update_viewer(pos, vel, forward);
-	// }
+	if (dirty) {
+		Vector3 pos = viewer_transform.origin - quad_tree.world_offset;
+		Vector3 vel = pos.direction_to(prev_pos) / p_delta;
+		Vector3 forward = viewer_transform.basis.get_column(2);
+		storage->update_viewer(pos, vel, forward);
+	}
 }
 
 void Terrain::_update_chunks() {
-// 	const int sector_size = quad_tree.sector_size * storage->get_chunk_size();
-// 	const real_t sector_size_x = sector_size * map_scale.x;
-// 	const real_t sector_size_z = sector_size * map_scale.z;
-// 	const Vector3 viewer_position = viewer_transform.origin;
-// 	const real_t far_squared = far_view * far_view;
-// 	quad_tree.selection_count = 0;
+	const int sector_size = quad_tree.sector_size * storage->get_chunk_size();
+	const real_t sector_size_x = sector_size * map_scale.x;
+	const real_t sector_size_z = sector_size * map_scale.z;
+	const Vector3 viewer_position = viewer_transform.origin;
+	const real_t far_squared = far_view * far_view;
+	quad_tree.selection_count = 0;
 
-// 	for (uint16_t iz = 0; iz < quad_tree.sector_count_z; ++iz) {
-// 		for (uint16_t ix = 0; ix < quad_tree.sector_count_x; ++ix) {
-// 			const Vector3 sector_pos = Vector3(sector_size_x * ix, 0.0, sector_size_z * iz) + quad_tree.world_offset;
-// 			real_t dx = sector_pos.x - viewer_position.x;
-// 			dx = MIN(abs(dx), abs(dx + sector_size_x));
-// 			real_t dz = sector_pos.z - viewer_position.z;
-// 			dz = MIN(abs(dz), abs(dx + sector_size_z));
+	for (uint16_t iz = 0; iz < quad_tree.sector_count_z; ++iz) {
+		for (uint16_t ix = 0; ix < quad_tree.sector_count_x; ++ix) {
+			const Vector3 sector_pos = Vector3(sector_size_x * ix, 0.0, sector_size_z * iz) + quad_tree.world_offset;
+			real_t dx = sector_pos.x - viewer_position.x;
+			dx = MIN(abs(dx), abs(dx + sector_size_x));
+			real_t dz = sector_pos.z - viewer_position.z;
+			dz = MIN(abs(dz), abs(dx + sector_size_z));
 
-// 			if (dx * dx + dz * dz < far_squared) {
-// 				CellKey sector = {ix, iz};
+			if (dx * dx + dz * dz < far_squared) {
+				CellKey sector = {ix, iz};
 
-// 				if (storage->is_sector_loaded(sector)) {
-// 					quad_tree.select_sector_nodes(viewer_transform.origin, sector, storage);
-// 				} else {
-// 					LODQuadTree::NodeSelectionResult result = quad_tree.select_sector_nodes(viewer_transform.origin, sector, storage, quad_tree.lod_levels - 1);
+				// if (storage->is_sector_loaded(sector)) {
+				// 	quad_tree.select_sector_nodes(viewer_transform.origin, sector, storage);
+				// } else {
+				// 	LODQuadTree::NodeSelectionResult result = quad_tree.select_sector_nodes(viewer_transform.origin, sector, storage, quad_tree.lod_levels - 1);
 
-// 					if (result != LODQuadTree::NodeSelectionResult::OutOfRange) {
-// 						storage->load_minmax(sector, result != LODQuadTree::NodeSelectionResult::OutOfFrustum);
-// 					}
-// 				}
-// 			}
-// 		}
-// 	}
+				// 	if (result != LODQuadTree::NodeSelectionResult::OutOfRange) {
+				// 		storage->load_minmax(sector, result != LODQuadTree::NodeSelectionResult::OutOfFrustum);
+				// 	}
+				// }
+			}
+		}
+	}
 
 // 	dirty = false;
 // 	RenderingServer *const rs = RenderingServer::get_singleton();
@@ -557,8 +557,8 @@ void Terrain::_set_lod_levels() {
 		return;
 	}
 
-	// int num_nodes = quad_tree.set_lod_levels(far_view, lod_detailed_chunks_radius);
-	// storage->allocate_buffers(quad_tree.sector_size, num_nodes, quad_tree.lod_levels, map_scale, far_view);
+	int num_nodes = quad_tree.set_lod_levels(far_view, lod_detailed_chunks_radius);
+	storage->allocate_buffers(quad_tree.sector_size, num_nodes, quad_tree.lod_levels, map_scale, far_view);
 	dirty = true;
 
 	// if (material_flags & SHADER_PARAM_MORPH_DATA) {
@@ -573,7 +573,7 @@ void Terrain::_set_lod_levels() {
 
 void Terrain::_storage_changed() {
 	_set_update_distance_tolerance_squared();
-// 	quad_tree.set_map_info(storage->get_chunk_size(), storage->get_region_size(), world_regions, map_scale);
+	quad_tree.set_map_info(storage->get_chunk_size(), storage->get_region_size(), world_regions, map_scale);
 	_set_lod_levels();
 
 	if (inside_world) {

@@ -12,7 +12,7 @@
 #ifndef TERRAINER_TERRAIN_H
 #define TERRAINER_TERRAIN_H
 
-// #include "lod_quad_tree.h"
+#include "lod_quad_tree.h"
 #include "map_storage/map_storage.h"
 // #include "terrain_info.h"
 
@@ -53,9 +53,9 @@ private:
 
     Ref<MapStorage> storage;
     Vector3 map_scale = Vector3(1.0, 1.0, 1.0);
-//     Ref<ShaderMaterial> material;
-//     Vector2i world_regions = Vector2i(4, 4);
-//     int lod_detailed_chunks_radius = 2;
+    Vector2i world_regions = Vector2i(4, 4);
+    //     Ref<ShaderMaterial> material;
+    int lod_detailed_chunks_radius = 2;
 
     RID mesh;
     bool mesh_valid = false;
@@ -66,7 +66,7 @@ private:
 //     Ref<ImageTexture> mmesh_instance_data_tex;
 //     PackedByteArray mmesh_instance_data;
 
-//     LODQuadTree quad_tree;
+    LODQuadTree quad_tree;
     Transform3D last_transform;
     bool inside_world = false;
     Camera3D *camera = nullptr;
@@ -114,21 +114,21 @@ protected:
     static void _bind_methods();
     PackedStringArray get_configuration_warnings() const override;
 
-// public:
-//     void set_camera(Camera3D *p_camera);
+public:
+    void set_camera(Camera3D *p_camera);
 
     void set_storage(const Ref<MapStorage> &p_storage);
     Ref<MapStorage> get_storage() const;
     void set_map_scale(const Vector3 &p_scale);
     Vector3 get_map_scale() const;
-//     void set_world_regions(const Vector2i &p_regions);
-//     Vector2i get_world_regions() const;
-//     void set_material(const Ref<ShaderMaterial> &p_material);
-//     Ref<ShaderMaterial> get_material() const;
-//     void set_lod_detailed_chunks_radius(int p_radius);
-//     int get_lod_detailed_chunks_radius() const;
-//     void set_lod_distance_ratio(real_t p_ratio);
-//     real_t get_lod_distance_ratio() const;
+    void set_world_regions(const Vector2i &p_regions);
+    Vector2i get_world_regions() const;
+    //     void set_material(const Ref<ShaderMaterial> &p_material);
+    //     Ref<ShaderMaterial> get_material() const;
+    void set_lod_detailed_chunks_radius(int p_radius);
+    int get_lod_detailed_chunks_radius() const;
+    void set_lod_distance_ratio(real_t p_ratio);
+    real_t get_lod_distance_ratio() const;
 
 //     int info_get_lod_levels() const;
 //     int info_get_lod_nodes_count(int p_level) const;

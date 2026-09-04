@@ -12,19 +12,19 @@
 #ifndef TERRAINER_MAP_STORAGE_H
 #define TERRAINER_MAP_STORAGE_H
 
-#include <atomic>
+#include "core/config/engine.h"
+#include "core/io/dir_access.h"
+#include "core/io/resource.h"
+#include "region.h"
 
 // #include "aligned_buffer.h"
 // #include "buffer_pool.h"
-#include "core/config/engine.h"
-#include "core/io/dir_access.h"
-#include "core/io/file_access.h"
-#include "core/io/resource.h"
-#include "core/os/thread.h"
-#include "lod_buffer.h"
+// #include "core/io/file_access.h"
+// #include "core/os/thread.h"
+// #include "lod_buffer.h"
 // #include "queue.h"
-#include "scene/resources/texture_rd.h"
-#include "servers/rendering/rendering_server.h"
+// #include "scene/resources/texture_rd.h"
+// #include "servers/rendering/rendering_server.h"
 // #include "vector_buffer_pool.h"
 
 // #include "core/object/worker_thread_pool.h"
@@ -39,14 +39,14 @@
 
 namespace Terrainer {
 
+using hmap_t = Region::hmap_t;
+
 class MapStorage : public Resource {
     GDCLASS(MapStorage, Resource);
 
     friend class Terrain;
 
 public:
-    typedef uint16_t hmap_t;
-
     struct CellKey {
         uint16_t x;
         uint16_t z;
@@ -123,29 +123,22 @@ public:
     // };
 
 private:
-    static const uint8_t FORMAT_VERSION = 1ui8;
-    static const size_t FILE_HEADER_SIZE = 64;
-    static const size_t SUBHEADER_SIZE = 32;
-    static const size_t MAGIC_SIZE = 4;
-    static constexpr char unsigned MAGIC_STRING[MAGIC_SIZE] = {'T', 'E', 'R', 'R'};
-    // static const size_t MINMAX_OFFSET = HEADER_SIZE;
-
     // static constexpr float CLEANUP_BUFFER_UTILIZATION = 0.8f;
     // static constexpr float BUFFER_EXTRA_ALLOCATION_FACTOR = 1.25f;
 
-    static constexpr uint16_t HMAP_HOLE_VALUE = UINT16_MAX;
-    static constexpr uint16_t HMAP_MAX = HMAP_HOLE_VALUE - 1;
+    // static constexpr uint16_t HMAP_HOLE_VALUE = UINT16_MAX;
+    // static constexpr uint16_t HMAP_MAX = HMAP_HOLE_VALUE - 1;
 
-    static const uint8_t FORMAT_LITTLE_ENDIAN = 0x11;
-    static const uint8_t FORMAT_BIG_ENDIAN = 0x22;
+    // static const uint8_t FORMAT_LITTLE_ENDIAN = 0x11;
+    // static const uint8_t FORMAT_BIG_ENDIAN = 0x22;
 
-    static const uint8_t FORMAT_PACKED = 0x01;
-    static const uint8_t FORMAT_SPARSE = 0x10;
-    static const uint8_t FORMAT_PACKAGING_MASK = 0x03;
+    // static const uint8_t FORMAT_PACKED = 0x01;
+    // static const uint8_t FORMAT_SPARSE = 0x10;
+    // static const uint8_t FORMAT_PACKAGING_MASK = 0x03;
 
-    static constexpr uint8_t REGION_FLAG_HAS_MINMAX = 1 << 0;
-    static constexpr uint8_t REGION_FLAG_HAS_HMAP = 1 << 1;
-    static constexpr uint8_t REGION_FLAG_HAS_SPLAT = 1 << 2;
+    // static constexpr uint8_t REGION_FLAG_HAS_MINMAX = 1 << 0;
+    // static constexpr uint8_t REGION_FLAG_HAS_HMAP = 1 << 1;
+    // static constexpr uint8_t REGION_FLAG_HAS_SPLAT = 1 << 2;
 
     // static constexpr uint32_t CHUNK_FLAG_HAS_MINMAX = 1 << 0;
     // static constexpr uint32_t CHUNK_FLAG_HAS_HEIGHT = 1 << 1;
@@ -218,47 +211,47 @@ private:
     // };
     // static_assert(sizeof(Header) == HEADER_SIZE);
 
-    struct alignas(SUBHEADER_SIZE) Subheader {
-        uint8_t presence;
-        uint8_t version;
-        uint8_t minmax_height_format;
-        uint8_t splat_meta_format;
-        uint8_t minmax_dir_size;
-        uint8_t hmap_dir_size;
-        uint8_t splat_dir_size;
-        uint8_t meta_dir_size;
-        uint64_t hmap_offset;
-        uint64_t splat_offset;
-        uint64_t meta_offset;
+    // struct alignas(SUBHEADER_SIZE) Subheader {
+    //     uint8_t presence;
+    //     uint8_t version;
+    //     uint8_t minmax_height_format;
+    //     uint8_t splat_meta_format;
+    //     uint8_t minmax_dir_size;
+    //     uint8_t hmap_dir_size;
+    //     uint8_t splat_dir_size;
+    //     uint8_t meta_dir_size;
+    //     uint64_t hmap_offset;
+    //     uint64_t splat_offset;
+    //     uint64_t meta_offset;
 
-        _FORCE_INLINE_ bool has_minmax() const { return presence & REGION_FLAG_HAS_MINMAX; }
-        _FORCE_INLINE_ bool has_hmap() const { return presence & REGION_FLAG_HAS_HMAP; }
-        _FORCE_INLINE_ bool has_splat() const { return presence & REGION_FLAG_HAS_SPLAT; }
-    };
-    static_assert(sizeof(Subheader) == SUBHEADER_SIZE);
+    //     _FORCE_INLINE_ bool has_minmax() const { return presence & REGION_FLAG_HAS_MINMAX; }
+    //     _FORCE_INLINE_ bool has_hmap() const { return presence & REGION_FLAG_HAS_HMAP; }
+    //     _FORCE_INLINE_ bool has_splat() const { return presence & REGION_FLAG_HAS_SPLAT; }
+    // };
+    // static_assert(sizeof(Subheader) == SUBHEADER_SIZE);
 
-    struct alignas(FILE_HEADER_SIZE) FileHeader {
-        char magic[MAGIC_SIZE];
-        uint8_t endianness;
-        uint8_t format;
-        uint8_t minmax_lods: 4;
-        uint8_t hmap_lods: 4;
-        uint8_t u8_reserved2;
-        uint32_t chunk_size;
-        uint32_t region_size;
-        uint64_t u64_reserved1;
-        uint64_t u64_reserved2;
-        Subheader subheader;
+    // struct alignas(FILE_HEADER_SIZE) FileHeader {
+    //     char magic[MAGIC_SIZE];
+    //     uint8_t endianness;
+    //     uint8_t format;
+    //     uint8_t minmax_lods: 4;
+    //     uint8_t hmap_lods: 4;
+    //     uint8_t u8_reserved2;
+    //     uint32_t chunk_size;
+    //     uint32_t region_size;
+    //     uint64_t u64_reserved1;
+    //     uint64_t u64_reserved2;
+    //     Subheader subheader;
 
-        _FORCE_INLINE_ bool is_packed() { return (format & FORMAT_PACKAGING_MASK) == FORMAT_PACKED; }
-        _FORCE_INLINE_ bool is_sparse() { return (format & FORMAT_PACKAGING_MASK) == FORMAT_SPARSE; }
-    };
-    static_assert(sizeof(FileHeader) == FILE_HEADER_SIZE);
+    //     _FORCE_INLINE_ bool is_packed() { return (format & FORMAT_PACKAGING_MASK) == FORMAT_PACKED; }
+    //     _FORCE_INLINE_ bool is_sparse() { return (format & FORMAT_PACKAGING_MASK) == FORMAT_SPARSE; }
+    // };
+    // static_assert(sizeof(FileHeader) == FILE_HEADER_SIZE);
 
-    union alignas(FILE_HEADER_SIZE) FileHeaderBytes {
-        uint8_t bytes[FILE_HEADER_SIZE];
-        FileHeader value;
-    };
+    // union alignas(FILE_HEADER_SIZE) FileHeaderBytes {
+    //     uint8_t bytes[FILE_HEADER_SIZE];
+    //     FileHeader value;
+    // };
 
     // struct ChunkEntry {
     //     uint32_t flags;
@@ -277,57 +270,62 @@ private:
     //     Writing,
     // };
 
-    struct MinMax {
-        hmap_t min;
-        hmap_t max;
+    // struct MinMax {
+    //     hmap_t min;
+    //     hmap_t max;
+    // };
+    // static_assert(sizeof(MinMax) == 2 * sizeof(hmap_t));
+
+
+    // struct Region {
+    //     Subheader *header = nullptr;
+    //     Ref<FileAccess> query_access;
+    //     Ref<FileAccess> data_access;
+    //     LODBuffer<MinMax> *minmax = nullptr;
+    //     LODBuffer<hmap_t> *hmap = nullptr;
+
+    //     bool is_minmax_loaded() const {
+    //         return status.minmax == LOADED;
+    //     }
+    //     bool is_hmap_loaded() const {
+    //         return status.hmap == LOADED;
+    //     }
+    //     bool is_minmax_awaiting() const {
+    //         return status.minmax != LOADED && status.minmax != UNLOADED;
+    //     }
+    //     bool is_hmap_awaiting() const {
+    //         return status.hmap != LOADED && status.hmap != UNLOADED;
+    //     }
+    //     void set_minmax_loaded(bool p_loaded) {
+    //         StatusEnum new_status = p_loaded ? LOADED : UNLOADED;
+    //         status.minmax = new_status;
+    //     }
+    //     void set_hmap_loaded(bool p_loaded) {
+    //         StatusEnum new_status = p_loaded ? LOADED : UNLOADED;
+    //         status.hmap = new_status;
+    //     }
+
+    // private:
+    //     enum StatusEnum : uint8_t {
+    //         UNLOADED,
+    //         LOADED,
+    //         LOADING,
+    //         LOAD_REQUESTED,
+    //         SAVE_REQUESTED
+    //     };
+
+    //     struct Status {
+    //         StatusEnum minmax;
+    //         StatusEnum hmap;
+    //         StatusEnum splat;
+    //         StatusEnum meta;
+    //     } status;
+    // };
+
+    struct Sector {
+
     };
-    static_assert(sizeof(MinMax) == 2 * sizeof(hmap_t));
 
-
-    struct Region {
-        Subheader *header = nullptr;
-        Ref<FileAccess> query_access;
-        Ref<FileAccess> data_access;
-        LODBuffer<MinMax> *minmax = nullptr;
-        LODBuffer<hmap_t> *hmap = nullptr;
-
-        bool is_minmax_loaded() const {
-            return status.minmax == LOADED;
-        }
-        bool is_hmap_loaded() const {
-            return status.hmap == LOADED;
-        }
-        bool is_minmax_awaiting() const {
-            return status.minmax != LOADED && status.minmax != UNLOADED;
-        }
-        bool is_hmap_awaiting() const {
-            return status.hmap != LOADED && status.hmap != UNLOADED;
-        }
-        void set_minmax_loaded(bool p_loaded) {
-            StatusEnum new_status = p_loaded ? LOADED : UNLOADED;
-            status.minmax = new_status;
-        }
-        void set_hmap_loaded(bool p_loaded) {
-            StatusEnum new_status = p_loaded ? LOADED : UNLOADED;
-            status.hmap = new_status;
-        }
-
-    private:
-        enum StatusEnum : uint8_t {
-            UNLOADED,
-            LOADED,
-            LOADING,
-            LOAD_REQUESTED,
-            SAVE_REQUESTED
-        };
-
-        struct Status {
-            StatusEnum minmax;
-            StatusEnum hmap;
-            StatusEnum splat;
-            StatusEnum meta;
-        } status;
-    };
 //     struct Tracker {
 //         void *pointer;
 //         mutable uint64_t frame;
@@ -408,12 +406,13 @@ private:
     bool size_locked = false;
     bool data_locked = false;
 
-//     uint16_t sector_size = 0ui16; // In terms of chunks.
-//     int lods = 0;
+    uint16_t sector_size = 0ui16; // In terms of chunks.
+    int lods = 0;
+    Region::Specs specs;
     // int minmax_lods = 6; // log2(32) + 1
     // int hmap_lods = 5; // log2(32)
-    LODBufferSpecs minmax_specs;
-    LODBufferSpecs hmap_specs;
+    // LODBufferSpecs minmax_specs;
+    // LODBufferSpecs hmap_specs;
 
 //     Thread io_thread;
 //     SafeFlag io_running;
@@ -424,11 +423,11 @@ private:
 //     uint64_t current_frame = 0;
 //     uint64_t cancelled_frame = 0;
 //     uint64_t current_request = 0;
-//     Vector3 viewer_pos;
-//     Vector3 viewer_vel;
-//     Vector3 viewer_forward;
-//     Vector3 predicted_viewer_pos;
-//     Vector3 map_scale;
+    Vector3 viewer_pos;
+    Vector3 viewer_vel;
+    Vector3 viewer_forward;
+    Vector3 predicted_viewer_pos;
+    Vector3 map_scale;
 
     HashMap<CellKey, Region*> regions;
 //     Vector<size_t> minmax_lod_offsets;
@@ -437,7 +436,7 @@ private:
 //     Vector<hmap_t> minmax_read;
 //     const mutable Tracker* cached_minmax_tracker = nullptr;
 //     mutable CellKey cached_sector = CellKey(UINT16_MAX, UINT16_MAX);
-//     real_t camera_far = 0.0;
+    real_t camera_far = 0.0;
     hmap_t default_height = 0;
 
 //     AlignedBuffer<hmap_t> *hmap_load = nullptr;
@@ -480,6 +479,7 @@ protected:
 public:
     static const int MAX_CHUNK_SIZE = 2048;
     static const int MAX_LOD_LEVELS = 15;
+    static_assert(Region::MAX_LOD_LEVELS == MAX_LOD_LEVELS);
     static const StringName path_changed;
 
     static const String REGION_FILE_BASE_NAME;
@@ -493,14 +493,14 @@ public:
     int get_num_regions() const;
     PackedByteArray get_region_hmap_buffer(const Vector2i &p_region);
     PackedInt32Array get_chunk_hmap(const Vector2i &p_region, const Vector2i &p_chunk);
-//     bool is_sector_loaded(CellKey p_sector) const;
+    bool is_sector_loaded(CellKey p_sector) const;
 //     void load_minmax(CellKey p_sector, bool p_in_frustum);
 //     void get_minmax(const NodeKey &p_key, int p_lod, hmap_t &r_min, hmap_t &r_max, bool &r_has_data) const;
-//     void allocate_buffers(int p_sector_chunks, int p_num_nodes, int p_lods, const Vector3 &p_map_scale, real_t p_far_view);
+    void allocate_buffers(int p_sector_chunks, int p_num_nodes, int p_lods, const Vector3 &p_map_scale, real_t p_far_view);
 
 //     uint16_t get_node_texture_layer(const NodeKey &p_key, int p_lod);
 
-//     void update_viewer(const Vector3 &p_viewer_pos, const Vector3 &p_viewer_vel, const Vector3 &p_viewer_forward);
+    void update_viewer(const Vector3 &p_viewer_pos, const Vector3 &p_viewer_vel, const Vector3 &p_viewer_forward);
     void stop_io();
     void process();
 

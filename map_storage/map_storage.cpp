@@ -28,14 +28,8 @@ void MapStorage::store_heightmap_data(const PackedByteArray &p_data, const Vecto
     ERR_FAIL_COND_EDMSG(p_data.size() != p_size.x * p_size.y, "Incorrect data buffer size.");
     clear();
 
-    if (minmax_specs.is_dirty()) {
-        int minmax_lods = MIN((int)Math::log2(float(region_size)) + 1, MAX_LOD_LEVELS);
-        minmax_specs.config(region_size, 1, minmax_lods);
-    }
-
-    if (hmap_specs.is_dirty()) {
-        int hmap_lods = MIN((int)Math::log2(float(chunk_size)), MAX_LOD_LEVELS);
-        hmap_specs.config(chunk_size, region_size * region_size, hmap_lods, true);
+    if (specs.dirty) {
+        specs.config();
     }
 
     const int32_t region_cells = region_size * chunk_size;
@@ -551,9 +545,9 @@ PackedInt32Array MapStorage::get_chunk_hmap(const Vector2i &p_region, const Vect
 }
 
 // bool MapStorage::is_sector_loaded(CellKey p_sector) const {
-//     _cache_minmax(p_sector);
-//     cached_minmax_tracker->frame = current_frame;
-//     return cached_minmax_tracker->is_loaded();
+    // _cache_minmax(p_sector);
+    // cached_minmax_tracker->frame = current_frame;
+    // return cached_minmax_tracker->is_loaded();
 // }
 
 // void MapStorage::load_minmax(CellKey p_sector, bool p_in_frustum) {
@@ -606,24 +600,24 @@ PackedInt32Array MapStorage::get_chunk_hmap(const Vector2i &p_region, const Vect
 //     r_has_data = cached_minmax_tracker->is_loaded();
 // }
 
-// void MapStorage::allocate_buffers(int p_sector_chunks, int p_num_nodes, int p_lods, const Vector3 &p_map_scale, real_t p_far_view) {
-//     stop_io();
-//     sector_size = p_sector_chunks;
-//     lods = p_lods;
-//     map_scale = p_map_scale;
-//     const int sector_cells = sector_size * chunk_size;
-//     const real_t sector_world_size_x = sector_cells * map_scale.x;
-//     const real_t sector_world_size_z = sector_cells * map_scale.z;
-//     size_t blocks_x = Math::ceil(2.0 * p_far_view / sector_world_size_x) + 1;
-//     size_t blocks_z = Math::ceil(2.0 * p_far_view / sector_world_size_z) + 1;
-//     camera_far = p_far_view;
+void MapStorage::allocate_buffers(int p_sector_chunks, int p_num_nodes, int p_lods, const Vector3 &p_map_scale, real_t p_far_view) {
+    stop_io();
+    sector_size = p_sector_chunks;
+    lods = p_lods;
+    map_scale = p_map_scale;
+    const int sector_cells = sector_size * chunk_size;
+    const real_t sector_world_size_x = sector_cells * map_scale.x;
+    const real_t sector_world_size_z = sector_cells * map_scale.z;
+    size_t blocks_x = Math::ceil(2.0 * p_far_view / sector_world_size_x) + 1;
+    size_t blocks_z = Math::ceil(2.0 * p_far_view / sector_world_size_z) + 1;
+    camera_far = p_far_view;
 
-//     if (sector_size < region_size) {
-//         blocks_x = region_size * (size_t)Math::ceil(real_t(sector_size * blocks_x) / real_t(region_size)) / sector_size + 1;
-//         blocks_z = region_size * (size_t)Math::ceil(real_t(sector_size * blocks_z) / real_t(region_size)) / sector_size + 1;
-//     }
+    if (sector_size < region_size) {
+        blocks_x = region_size * (size_t)Math::ceil(real_t(sector_size * blocks_x) / real_t(region_size)) / sector_size + 1;
+        blocks_z = region_size * (size_t)Math::ceil(real_t(sector_size * blocks_z) / real_t(region_size)) / sector_size + 1;
+    }
 
-//     const size_t minmax_block_count = blocks_x * blocks_z * BUFFER_EXTRA_ALLOCATION_FACTOR;
+    // const size_t minmax_block_count = blocks_x * blocks_z * BUFFER_EXTRA_ALLOCATION_FACTOR;
 //     minmax_lod_offsets.resize(lods);
 //     hmap_lod_offset.resize(lods);
 //     size_t minmax_block_size = 0;
@@ -689,7 +683,7 @@ PackedInt32Array MapStorage::get_chunk_hmap(const Vector2i &p_region, const Vect
 //         hmap_buffer = memnew(VectorBufferPool<hmap_t>(hmap_size, hmap_count));
 //         hmap_load = memnew(AlignedBuffer<hmap_t>(hmap_size + 4 * (chunk_size + 1)));
 //     }
-// }
+}
 
 // uint16_t MapStorage::get_node_texture_layer(const NodeKey &p_key, int p_lod) {
 //     ERR_FAIL_INDEX_V_EDMSG(p_lod, lods, 0, "Incorrect LOD level.");
@@ -711,12 +705,12 @@ PackedInt32Array MapStorage::get_chunk_hmap(const Vector2i &p_region, const Vect
 //     }
 // }
 
-// void MapStorage::update_viewer(const Vector3 &p_viewer_pos, const Vector3 &p_viewer_vel, const Vector3 &p_viewer_forward) {
-//     viewer_pos = p_viewer_pos;
-//     viewer_vel = p_viewer_vel;
-//     viewer_forward = p_viewer_forward;
-//     predicted_viewer_pos = viewer_pos + viewer_vel * PRIORITY_PREDICTION_DELTA_TIME;
-// }
+void MapStorage::update_viewer(const Vector3 &p_viewer_pos, const Vector3 &p_viewer_vel, const Vector3 &p_viewer_forward) {
+    viewer_pos = p_viewer_pos;
+    viewer_vel = p_viewer_vel;
+    viewer_forward = p_viewer_forward;
+    predicted_viewer_pos = viewer_pos + viewer_vel * PRIORITY_PREDICTION_DELTA_TIME;
+}
 
 void MapStorage::stop_io() {
     // if (io_thread.is_started()) {
