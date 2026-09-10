@@ -26,14 +26,13 @@
 
 namespace Terrainer {
 
-using CellKey = MapStorage::CellKey;
+using hmap_t = Region::hmap_t;
+using CellKey = Region::CellKey;
 using NodeKey = MapStorage::NodeKey;
-using hmap_t = MapStorage::hmap_t;
 
 class LODQuadTree {
 
     friend class Terrain;
-
 private:
     static const uint16_t LOD_MASK = 0x000F;
     static const uint16_t TL_BIT = 1 << 4;
@@ -46,21 +45,21 @@ private:
     static constexpr real_t DEFAULT_MORPH_START_RATIO = 0.66;
 
     enum NodeSelectionResult {
-		Undefined = 0,
-		OutOfFrustum = 1,
-		OutOfRange = 2,
-        OutOfMap = 4,
-        Selected = 8,
-        MaxReached = 16
+		UNDEFINED = 0,
+		OUT_FRUSTUM = 1,
+		OUT_RANGE = 2,
+        OUT_MAP = 4,
+        SELECTED = 8,
+        MAX_REACHED = 16
 	};
 
-    static constexpr int RESULT_DISCARD = OutOfFrustum | OutOfMap;
+    static constexpr int RESULT_DISCARD = OUT_FRUSTUM | OUT_MAP;
 
     enum IntersectType
     {
-        Outside,
-        Intersects,
-        Inside
+        OUTSIDE,
+        INTERSECTS,
+        INSIDE
     };
 
     struct QTNode {
@@ -114,7 +113,7 @@ private:
     TypedArray<Plane> frustum;
 #endif
     NodeSelectionResult _lod_select(const Vector3 &p_viewer_position, const Ref<MapStorage> &p_storage, bool p_parent_inside_frustum, const NodeKey &p_key, uint16_t p_size, int p_lod_level, int p_stop_at_lod_level);
-    _FORCE_INLINE_ AABB _get_node_AABB(const NodeKey &p_key, hmap_t min_y, hmap_t max_y, uint16_t p_size) const;
+    _FORCE_INLINE_ AABB _get_node_AABB(const NodeKey &p_key, hmap_t p_min_y, hmap_t p_max_y, uint16_t p_size) const;
     _FORCE_INLINE_ IntersectType _aabb_intersects_frustum(const AABB &p_aabb) const;
 
 public:
@@ -122,14 +121,14 @@ public:
     int set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_radius);
     NodeSelectionResult select_sector_nodes(const Vector3 &p_viewer_position, CellKey p_sector, const Ref<MapStorage> &p_storage, int p_stop_at_lod_level = 0);
     // void update_stats();
-    // const QTNode *get_selected_node(int p_index) const;
+    const QTNode *get_selected_node(int p_index) const;
 //     AABB get_selected_node_aabb(int p_index) const;
 //     int get_selected_node_lod(int p_index) const;
 //     void set_info(TTerrainInfo *p_info) { info = p_info; }
 //     void set_world_info(TWorldInfo *p_info) { world_info = p_info; }
     // int get_lod_nodes_count(int p_level) const;
-    // Ref<ImageTexture> get_morph_texture() const;
-    // Transform3D get_node_transform(const QTNode *p_node) const;
+    Ref<ImageTexture> get_morph_texture() const;
+    Transform3D get_node_transform(const QTNode *p_node) const;
 
     LODQuadTree();
     ~LODQuadTree();

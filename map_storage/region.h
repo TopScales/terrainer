@@ -24,11 +24,40 @@ namespace Terrainer {
 
 class Region {
 
+    friend class Sector;
     friend class MapStorage;
 
 public:
     typedef uint16_t hmap_t;
     static const int MAX_LOD_LEVELS = 15;
+
+    struct CellKey {
+        uint16_t x;
+        uint16_t z;
+
+        constexpr CellKey() : x(0), z(0) {}
+        constexpr CellKey(uint16_t p_x, uint16_t p_z) : x(p_x), z(p_z) {}
+        constexpr CellKey(const Vector2i &p_in) : x(p_in.x), z(p_in.y) {}
+
+        constexpr CellKey operator+(CellKey p_k) const { return CellKey(x + p_k.x, z + p_k.z); }
+        constexpr void operator+=(CellKey p_k) { x += p_k.x; z += p_k.z; }
+        constexpr CellKey operator-(CellKey p_k) const { return CellKey(x - p_k.x, z - p_k.z); }
+        constexpr void operator-=(CellKey p_k) { x -= p_k.x; z -= p_k.z; }
+        constexpr CellKey operator*(CellKey p_k) const { return CellKey(x * p_k.x, z * p_k.z); }
+        constexpr CellKey operator*(uint16_t p_k) const { return CellKey(x * p_k, z * p_k); }
+        constexpr CellKey operator/(uint16_t p_k) const { return CellKey(x / p_k, z / p_k); }
+        constexpr bool operator==(CellKey p_k) const { return x == p_k.x && z == p_k.z; }
+        constexpr bool operator!=(CellKey p_k) const { return x != p_k.x || z != p_k.z; }
+
+        _FORCE_INLINE_ Vector3 position(real_t p_scale_x, real_t p_scale_z) const {
+            return Vector3(x * p_scale_x, 0.0, z * p_scale_z);
+        }
+
+        uint32_t hash() const {
+            return hash_murmur3_one_32((uint32_t)x | ((uint32_t)z << 16));
+	    }
+    };
+    static_assert(sizeof(CellKey) == 4);
 
 private:
     static const size_t FILE_HEADER_INFO_SIZE = 64;
@@ -40,27 +69,141 @@ private:
     static constexpr uint8_t REGION_FLAG_HAS_HMAP = 1 << 1;
     static constexpr uint8_t REGION_FLAG_HAS_SPLAT = 1 << 2;
 
+    enum class ChunkPad {
+        X_NEG,
+        X_POS,
+        Z_NEG,
+        Z_POS
+    };
+
+    struct MinMax {
+        hmap_t min;
+        hmap_t max;
+
+        constexpr MinMax() : min(0), max(0) {}
+        constexpr MinMax(hmap_t p_min, hmap_t p_max) : min(p_min), max(p_max) {}
+    };
+    static_assert(sizeof(MinMax) == 2 * sizeof(hmap_t));
+
     struct Specs {
-        uint8_t version;
-        uint8_t format;
+        uint8_t version = 0;
+        uint8_t format = 0;
         uint8_t region_lods: 4;
         uint8_t chunk_lods: 4;
         bool dirty = true;
-        uint32_t chunk_size;
-        uint32_t region_size;
-        size_t region_buffer_size;
-        size_t chunk_buffer_size;
-        size_t chunk_padded_buffer_size;
-        size_t hmap_buffer_size;
+        uint16_t chunk_size = 32ui16;
+        uint16_t region_size = 32ui16;
+        size_t region_buffer_size = 0;
+        size_t hmap_buffer_size = 0;
+        size_t *minmax_lod_offsets = nullptr;
+        size_t *hmap_lod_offsets = nullptr;
+        size_t *hmap_lod_chunk_sizes = nullptr;
+
+        size_t *sector_minmax_lod_offsets = nullptr;
+        uint16_t sector_size = 0ui16; // In terms of chunks.
+        int lods = 0;
+        int sector_regions = 0;
+        size_t sector_minmax_buffer_size = 0;
+
+        hmap_t default_height = 0;
+        MinMax default_minmax;
 
         void config(int p_chunk_lods = MAX_LOD_LEVELS) {
             ERR_FAIL_COND_EDMSG(p_chunk_lods < 0, "Chunk LODs must be positive.");
             region_lods = MIN((int)Math::log2(float(region_size)) + 1, MAX_LOD_LEVELS);
             chunk_lods = MIN(MIN((int)Math::log2(float(chunk_size)) + 1, MAX_LOD_LEVELS), p_chunk_lods);
-            region_buffer_size = lod_geom_expand_sqr(region_size * region_size, region_lods);
-            chunk_buffer_size = (chunk_size + 1) * (chunk_size + 1);
-            chunk_padded_buffer_size = chunk_buffer_size + 4 * (chunk_size + 1);
-            hmap_buffer_size = region_buffer_size * chunk_padded_buffer_size + lod_geom_expand_sqr(chunk_size * chunk_size, chunk_lods);
+            const size_t chunk_padded_buffer_size = (chunk_size + 1) * (chunk_size + 1) + 4 * (chunk_size + 1);
+
+            if (minmax_lod_offsets) {
+                memfree(minmax_lod_offsets);
+            }
+
+            if (hmap_lod_offsets) {
+                memfree(hmap_lod_offsets);
+            }
+
+            if (hmap_lod_chunk_sizes) {
+                memfree(hmap_lod_chunk_sizes);
+            }
+
+            minmax_lod_offsets = (size_t *)memalloc((region_lods + 1) * sizeof(size_t));
+            hmap_lod_offsets = (size_t *)memalloc((region_lods + chunk_lods + 1) * sizeof(size_t));
+            hmap_lod_chunk_sizes = (size_t *)memalloc((region_lods + chunk_lods) * sizeof(size_t));
+            size_t minmax_offset = 0;
+            size_t hmap_offset = 0;
+            size_t side = region_size;
+
+            for (int ilod = 0; ilod < region_lods; ++ilod) {
+                minmax_lod_offsets[ilod] = minmax_offset;
+                hmap_lod_offsets[ilod] = hmap_offset;
+                hmap_lod_chunk_sizes[ilod] = chunk_padded_buffer_size;
+                minmax_offset += side * side;
+                hmap_offset += chunk_padded_buffer_size * side * side;
+                side >>= 1;
+            }
+
+            side = chunk_size >> 1;
+
+            for (int ilod = region_lods; ilod < region_lods + chunk_lods; ++ilod) {
+                hmap_lod_offsets[ilod] = hmap_offset;
+                hmap_lod_chunk_sizes[ilod] = side * side;
+                hmap_offset += side * side;
+                side >>= 1;
+            }
+
+            minmax_lod_offsets[region_lods] = minmax_offset;
+            hmap_lod_offsets[region_lods + chunk_lods] = hmap_offset;
+            region_buffer_size = minmax_offset;
+            hmap_buffer_size = hmap_offset;
+        }
+
+        void set_sector_info(uint16_t p_sector_size, int p_lods) {
+            sector_size = p_sector_size;
+            lods = p_lods;
+            real_t nreg = (real_t)region_size / (real_t)sector_size;
+            sector_regions = MIN((int)nreg, 1);
+
+            if (sector_minmax_lod_offsets) {
+                memfree(sector_minmax_lod_offsets);
+                sector_minmax_lod_offsets = nullptr;
+            }
+
+            if (lods > region_lods) {
+                int extra_lods = lods - region_lods;
+                sector_minmax_lod_offsets = (size_t *)memalloc((extra_lods + 1) * sizeof(size_t));
+                size_t minmax_offset = 0;
+                size_t side = sector_regions;
+
+                for (int ilod = 0; ilod < extra_lods; ++ilod) {
+                    sector_minmax_lod_offsets[ilod] = minmax_offset;
+                    minmax_offset += side * side;
+                    side >>= 1;
+                }
+
+                sector_minmax_lod_offsets[extra_lods] = minmax_offset;
+                sector_minmax_buffer_size = minmax_offset;
+            }
+        }
+
+        _FORCE_INLINE_ size_t get_buffer_size() const { return region_buffer_size * sizeof(MinMax) + hmap_buffer_size * sizeof(hmap_t); }
+        _FORCE_INLINE_ size_t get_minmax_buffer_size() const { return region_buffer_size; }
+
+        ~Specs() {
+            if (minmax_lod_offsets) {
+                memfree(minmax_lod_offsets);
+            }
+
+            if (hmap_lod_offsets) {
+                memfree(hmap_lod_offsets);
+            }
+
+            if (hmap_lod_chunk_sizes) {
+                memfree(hmap_lod_chunk_sizes);
+            }
+
+            if (sector_minmax_lod_offsets) {
+                memfree(sector_minmax_lod_offsets);
+            }
         }
     };
 
@@ -70,59 +213,39 @@ private:
         uint8_t format;
         uint8_t region_lods: 4;
         uint8_t chunk_lods: 4;
-        uint8_t u8_reserved;
+        uint8_t u8_reserved = 0;
         uint32_t chunk_size;
         uint32_t region_size;
     };
     static_assert(sizeof(HeaderInfo) == FILE_HEADER_INFO_SIZE);
 
-    struct MinMax {
-        hmap_t min;
-        hmap_t max;
-    };
-    static_assert(sizeof(MinMax) == 2 * sizeof(hmap_t));
-
-    const Ref<FileAccess> &access;
+    const Ref<FileAccess> access;
     const Specs &specs;
     uint8_t *buffer = nullptr;
     bool format_mismatch = false;
     MinMax *minmax_buffer = nullptr;
     hmap_t *hmap_buffer = nullptr;
 
+    void write_header() const;
+    _FORCE_INLINE_ hmap_t *get_hmap_chunk(size_t p_lod, size_t p_chunk_idx) const;
+    _FORCE_INLINE_ hmap_t *get_hmap_chunk_pad(size_t p_lod, size_t p_chunk_idx, ChunkPad p_pad) const;
+    _FORCE_INLINE_ MinMax get_minmax(size_t p_lod, size_t p_block_idx) const {
+#ifdef TERRAINER_DEBUG
+        ERR_FAIL_INDEX_V_EDMSG(p_lod, specs.region_lods, MinMax(specs.default_height, specs.default_height + 1), "LOD out of range.");
+        ERR_FAIL_INDEX_V_EDMSG(p_block_idx, specs.minmax_lod_offsets[p_lod + 1] - specs.minmax_lod_offsets[p_lod], MinMax(specs.default_height, specs.default_height + 1), "Block out of range.");
+#endif
+        return *(minmax_buffer + specs.minmax_lod_offsets[p_lod] + p_block_idx);
+    }
 
 public:
-    bool load() {
-        HeaderInfo info;
-        access->get_buffer((uint8_t *)&info, FILE_HEADER_INFO_SIZE);
+    bool load();
+    void load_hmap_region(const CellKey &p_region, const CellKey &p_regions, const PackedByteArray &p_data, const Vector2i &p_size);
+    void fill_hmap_region_pad(const CellKey &p_region, const CellKey &p_regions, Vector<Region *> &p_regions_pool, int p_pool_index);
+    void store_hmap() const;
+    PackedInt32Array get_hmap_chunk_values(size_t p_lod, const CellKey &p_chunk) const;
 
-        for (int i = 0; i < MAGIC_SIZE; ++i) {
-            ERR_FAIL_COND_V_EDMSG(info.magic[i] != MAGIC_STRING[i], false, vformat("Region file %s has incorrect format.", access->get_path().get_file()));
-        }
-
-        ERR_FAIL_COND_V_EDMSG(info.chunk_size != specs.chunk_size, false, vformat("Wrong chunk size in region file %s.", access->get_path().get_file()));
-        ERR_FAIL_COND_V_EDMSG(info.region_size != specs.region_size, false, vformat("Wrong region size in region file %s.", access->get_path().get_file()));
-        ERR_FAIL_COND_V_EDMSG(info.version > specs.version, false, vformat("Unsupported file version in region file %s.", access->get_path().get_file()));
-        format_mismatch = info.format != specs.format || info.chunk_lods != specs.chunk_lods;
-        size_t buffer_size = specs.region_buffer_size * sizeof(MinMax) + specs.hmap_buffer_size * sizeof(hmap_t);
-        ERR_FAIL_COND_V_EDMSG(FileAccess::get_size(access->get_path_absolute()) != buffer_size + FILE_HEADER_INFO_SIZE, false, vformat("Incorrect file size for region file %s", access->get_path().get_file()));
-        buffer = (uint8_t *)memalloc(buffer_size);
-        access->get_buffer(buffer, buffer_size);
-        minmax_buffer = (MinMax *)buffer;
-        hmap_buffer = (hmap_t *)(buffer + specs.region_buffer_size * sizeof(MinMax));
-    }
-
-    Region(const Specs &p_specs, const Ref<FileAccess> &p_access)
-        : specs(p_specs), access(p_access)
-    { }
-
-    ~Region() {
-        if (buffer) {
-            memfree(buffer);
-            buffer = nullptr;
-            minmax_buffer = nullptr;
-            hmap_buffer = nullptr;
-        }
-    }
+    Region(const Specs &p_specs, const Ref<FileAccess> &p_access);
+    ~Region();
 };
 
 } // namespace Terrainer

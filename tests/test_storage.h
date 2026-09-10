@@ -80,6 +80,8 @@ TEST_CASE("[Modules][Terrainer] Storage") {
 		Ref<Image> image = noise->get_image(w, h);
 		PackedByteArray data = image->get_data();
 		storage->store_heightmap_data(data, Vector2i(w, h));
+		storage->clear();
+		CHECK(storage->load_headers() == OK);
 		CHECK(storage->get_num_regions() == regions.x * regions.y);
 		String file1 = dir_path + vformat(MapStorage::REGION_FILE_FORMAT, 0, 0);
 		String file2 = dir_path + vformat(MapStorage::REGION_FILE_FORMAT, 1, 0);
@@ -94,10 +96,11 @@ TEST_CASE("[Modules][Terrainer] Storage") {
 		for (size_t irz = 0; irz < 2; ++irz) {
 			for (size_t irx = 0; irx < 2; ++irx) {
 				bool equal = true;
+				Vector2i region = Vector2i(irx, irz);
 
 				for (size_t icz = 0; icz < region_size; ++icz) {
 					for (size_t icx = 0; icx < region_size; ++icx) {
-						PackedInt32Array hmap = storage->get_chunk_hmap(Vector2i(irx, irz), Vector2i(icx, icz));
+						PackedInt32Array hmap = storage->get_chunk_hmap(region, 0, Vector2i(icx, icz));
 						const int *hmap_ptr = hmap.ptr();
 
 						for (size_t j = 0; j < chunk_size; ++j) {

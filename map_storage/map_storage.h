@@ -15,7 +15,7 @@
 #include "core/config/engine.h"
 #include "core/io/dir_access.h"
 #include "core/io/resource.h"
-#include "region.h"
+#include "sector.h"
 
 // #include "aligned_buffer.h"
 // #include "buffer_pool.h"
@@ -24,7 +24,6 @@
 // #include "lod_buffer.h"
 // #include "queue.h"
 // #include "scene/resources/texture_rd.h"
-// #include "servers/rendering/rendering_server.h"
 // #include "vector_buffer_pool.h"
 
 // #include "core/object/worker_thread_pool.h"
@@ -40,6 +39,7 @@
 namespace Terrainer {
 
 using hmap_t = Region::hmap_t;
+using CellKey = Region::CellKey;
 
 class MapStorage : public Resource {
     GDCLASS(MapStorage, Resource);
@@ -47,34 +47,6 @@ class MapStorage : public Resource {
     friend class Terrain;
 
 public:
-    struct CellKey {
-        uint16_t x;
-        uint16_t z;
-
-        constexpr CellKey() : x(0), z(0) {}
-        constexpr CellKey(uint16_t p_x, uint16_t p_z) : x(p_x), z(p_z) {}
-        constexpr CellKey(const Vector2i &p_in) : x(p_in.x), z(p_in.y) {}
-
-        constexpr CellKey operator+(CellKey p_k) const { return CellKey(x + p_k.x, z + p_k.z); }
-        constexpr void operator+=(CellKey p_k) { x += p_k.x; z += p_k.z; }
-        constexpr CellKey operator-(CellKey p_k) const { return CellKey(x - p_k.x, z - p_k.z); }
-        constexpr void operator-=(CellKey p_k) { x -= p_k.x; z -= p_k.z; }
-        constexpr CellKey operator*(CellKey p_k) const { return CellKey(x * p_k.x, z * p_k.z); }
-        constexpr CellKey operator*(uint16_t p_k) const { return CellKey(x * p_k, z * p_k); }
-        constexpr CellKey operator/(uint16_t p_k) const { return CellKey(x / p_k, z / p_k); }
-        constexpr bool operator==(CellKey p_k) const { return x == p_k.x && z == p_k.z; }
-        constexpr bool operator!=(CellKey p_k) const { return x != p_k.x || z != p_k.z; }
-
-        _FORCE_INLINE_ Vector3 position(real_t p_scale_x, real_t p_scale_z) const {
-            return Vector3(x * p_scale_x, 0.0, z * p_scale_z);
-        }
-
-        uint32_t hash() const {
-            return hash_murmur3_one_32((uint32_t)x | ((uint32_t)z << 16));
-	    }
-    };
-    static_assert(sizeof(CellKey) == 4);
-
     struct NodeKey {
         CellKey sector;
         CellKey cell;
@@ -126,9 +98,6 @@ private:
     // static constexpr float CLEANUP_BUFFER_UTILIZATION = 0.8f;
     // static constexpr float BUFFER_EXTRA_ALLOCATION_FACTOR = 1.25f;
 
-    // static constexpr uint16_t HMAP_HOLE_VALUE = UINT16_MAX;
-    // static constexpr uint16_t HMAP_MAX = HMAP_HOLE_VALUE - 1;
-
     // static const uint8_t FORMAT_LITTLE_ENDIAN = 0x11;
     // static const uint8_t FORMAT_BIG_ENDIAN = 0x22;
 
@@ -164,7 +133,7 @@ private:
     // static constexpr float PRIORITY_DISTANCE_HALF_DECAY = 20.0f;
     // static constexpr float PRIORITY_IN_FRUSTUM = 2.0f;
     // static constexpr float PRIORITY_MINMAX = 10.0f;
-    // static constexpr real_t PRIORITY_PREDICTION_DELTA_TIME = 2.0;
+    static constexpr real_t PRIORITY_PREDICTION_DELTA_TIME = 2.0; // To predict the position of viewer in this amount of seconds.
 
     // static const uint16_t INVALID_TEXTURE_LAYER = -1;
 
@@ -322,10 +291,6 @@ private:
     //     } status;
     // };
 
-    struct Sector {
-
-    };
-
 //     struct Tracker {
 //         void *pointer;
 //         mutable uint64_t frame;
@@ -401,16 +366,10 @@ private:
 //     };
 
     String directory_path;
-    uint16_t chunk_size = 32ui16;
-    uint16_t region_size = 32ui16;
     bool size_locked = false;
     bool data_locked = false;
 
-    uint16_t sector_size = 0ui16; // In terms of chunks.
-    int lods = 0;
     Region::Specs specs;
-    // int minmax_lods = 6; // log2(32) + 1
-    // int hmap_lods = 5; // log2(32)
     // LODBufferSpecs minmax_specs;
     // LODBufferSpecs hmap_specs;
 
@@ -429,7 +388,8 @@ private:
     Vector3 predicted_viewer_pos;
     Vector3 map_scale;
 
-    HashMap<CellKey, Region*> regions;
+    HashMap<CellKey, Region *> regions;
+    HashMap<CellKey, Sector *> sectors;
 //     Vector<size_t> minmax_lod_offsets;
 //     BufferPool<hmap_t> *minmax_buffer = nullptr;
 //     HashMap<CellKey, Tracker> minmax_trackers;
@@ -437,7 +397,6 @@ private:
 //     const mutable Tracker* cached_minmax_tracker = nullptr;
 //     mutable CellKey cached_sector = CellKey(UINT16_MAX, UINT16_MAX);
     real_t camera_far = 0.0;
-    hmap_t default_height = 0;
 
 //     AlignedBuffer<hmap_t> *hmap_load = nullptr;
 //     VectorBufferPool<hmap_t> *hmap_buffer = nullptr;
@@ -450,7 +409,7 @@ private:
 //     Ref<Texture2DArrayRD> heightmap_texture;
 //     real_t hmap_buffer_size_factor = 0.5;
 
-    _FORCE_INLINE_ bool _is_format_correct(Ref<FileAccess> &p_file) const;
+    // _FORCE_INLINE_ bool _is_format_correct(Ref<FileAccess> &p_file) const;
 //     static void _process_requests(void *p_storage);
 //     _FORCE_INLINE_ void _add_request(const NodeKey &p_key, Tracker *p_tracker, uint16_t p_data_type, uint16_t p_lod);
 //     void _submit_requests();
@@ -486,16 +445,19 @@ public:
     static const String REGION_FILE_EXTENSION;
     static const String REGION_FILE_FORMAT;
 
+    static constexpr uint16_t HMAP_HOLE_VALUE = UINT16_MAX;
+    static constexpr uint16_t HMAP_MAX = HMAP_HOLE_VALUE - 1;
+
     void store_heightmap_data(const PackedByteArray &p_data, const Vector2i &p_size);
     Error load_headers();
     void clear();
     bool has_region(const Vector2i &p_region) const;
     int get_num_regions() const;
-    PackedByteArray get_region_hmap_buffer(const Vector2i &p_region);
-    PackedInt32Array get_chunk_hmap(const Vector2i &p_region, const Vector2i &p_chunk);
-    bool is_sector_loaded(CellKey p_sector) const;
+    PackedInt32Array get_chunk_hmap(const Vector2i &p_region, int p_lod, const Vector2i &p_chunk) const;
+    // bool is_sector_loaded(CellKey p_sector) const;
 //     void load_minmax(CellKey p_sector, bool p_in_frustum);
-//     void get_minmax(const NodeKey &p_key, int p_lod, hmap_t &r_min, hmap_t &r_max, bool &r_has_data) const;
+    void get_minmax(const NodeKey &p_key, int p_lod, hmap_t &r_min, hmap_t &r_max);
+    // void get_minmax(const NodeKey &p_key, int p_lod, hmap_t &r_min, hmap_t &r_max, bool &r_has_data) const;
     void allocate_buffers(int p_sector_chunks, int p_num_nodes, int p_lods, const Vector3 &p_map_scale, real_t p_far_view);
 
 //     uint16_t get_node_texture_layer(const NodeKey &p_key, int p_lod);
@@ -503,6 +465,7 @@ public:
     void update_viewer(const Vector3 &p_viewer_pos, const Vector3 &p_viewer_vel, const Vector3 &p_viewer_forward);
     void stop_io();
     void process();
+    _FORCE_INLINE_ void update_specs() { if (specs.dirty) { specs.config(); } }
 
 //     int get_buffer_stat(BufferType p_buffer, BufferStat p_stat) const;
 

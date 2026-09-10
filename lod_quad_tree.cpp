@@ -79,7 +79,7 @@ int LODQuadTree::set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_rad
 
 LODQuadTree::NodeSelectionResult LODQuadTree::select_sector_nodes(const Vector3 &p_viewer_position, CellKey p_sector, const Ref<MapStorage> &p_storage, int p_stop_at_lod_level) {
     if (p_sector.x >= sector_count_x || p_sector.z >= sector_count_z) {
-        return OutOfMap;
+        return OUT_MAP;
     }
 
     return _lod_select(p_viewer_position, p_storage, false, NodeKey(p_sector, CellKey()), sector_size, lod_levels - 1, p_stop_at_lod_level);
@@ -126,10 +126,10 @@ LODQuadTree::NodeSelectionResult LODQuadTree::select_sector_nodes(const Vector3 
 //     return selection_count;
 // }
 
-// const LODQuadTree::QTNode *LODQuadTree::get_selected_node(int p_index) const {
-//     ERR_FAIL_INDEX_V_EDMSG(p_index, selection_count, nullptr, "Selected node index out of bounds.");
-//     return &selected_buffer[p_index];
-// }
+const LODQuadTree::QTNode *LODQuadTree::get_selected_node(int p_index) const {
+    ERR_FAIL_INDEX_V_EDMSG(p_index, selection_count, nullptr, "Selected node index out of bounds.");
+    return &selected_buffer[p_index];
+}
 
 // AABB LODQuadTree::get_selected_node_aabb(int p_index) const {
 //     ERR_FAIL_INDEX_V_EDMSG(p_index, selection_count, AABB(), "Selected node index out of bounds.");
@@ -150,162 +150,158 @@ LODQuadTree::NodeSelectionResult LODQuadTree::select_sector_nodes(const Vector3 
 //     return lods_count[p_level];
 // }
 
-// Ref<ImageTexture> LODQuadTree::get_morph_texture() const {
-//     PackedByteArray buffer;
-//     buffer.resize(4 * lod_levels);
-//     real_t prev_pos = 0.0;
-//     uint8_t *w = buffer.ptrw();
+Ref<ImageTexture> LODQuadTree::get_morph_texture() const {
+    PackedByteArray buffer;
+    buffer.resize(4 * lod_levels);
+    real_t prev_pos = 0.0;
+    uint8_t *w = buffer.ptrw();
 
-//     for (int i = 0; i < lod_levels; ++i) {
-//         float end = lod_visibility_range[i];
-//         float start = morph_start[i];
-//         float c1 = end / (end - start);
-//         float c2 = 1.0f / (end - start);
-//         int64_t index = 4 * i;
-// 		encode_uint16(MAKE_HALF_FLOAT(c1), &w[index]);
-//         encode_uint16(MAKE_HALF_FLOAT(c2), &w[index + 2]);
-//     }
+    for (int i = 0; i < lod_levels; ++i) {
+        float end = lod_visibility_range[i];
+        float start = morph_start[i];
+        float c1 = end / (end - start);
+        float c2 = 1.0f / (end - start);
+        int64_t index = 4 * i;
+		encode_uint16(MAKE_HALF_FLOAT(c1), &w[index]);
+        encode_uint16(MAKE_HALF_FLOAT(c2), &w[index + 2]);
+    }
 
-//     Ref<Image> image = Image::create_from_data(lod_levels, 1, false, Image::FORMAT_RGH, buffer);
-//     Ref<ImageTexture> texture = ImageTexture::create_from_image(image);
-//     return texture;
-// }
-
-// Transform3D LODQuadTree::get_node_transform(const QTNode *p_node) const {
-//     const Vector3 bx = Vector3(p_node->size * map_scale.x, 0.0, 0.0);
-//     const Vector3 by = Vector3(0.0, 1.0, 0.0);
-//     const Vector3 bz = Vector3(0.0, 0.0, p_node->size * map_scale.z);
-//     const Vector3 sector_pos = Vector3(p_node->key.sector.x * sector_size * map_scale.x, 0, p_node->key.sector.z * sector_size * map_scale.z);
-//     const Vector3 cell_pos = Vector3(p_node->key.cell.x * bx.x, p_node->min_y * map_scale.y, p_node->key.cell.z * bz.z);
-//     const Vector3 origin = cell_pos + sector_pos + world_offset;
-//     return Transform3D(Basis(bx, by, bz), origin);
-// }
-
-LODQuadTree::NodeSelectionResult LODQuadTree::_lod_select(const Vector3 &p_viewer_position, const Ref<MapStorage> &p_storage, bool p_parent_inside_frustum, const NodeKey &p_key, uint16_t p_size, int p_lod_level, int p_stop_at_lod_level) {
-//     hmap_t min_y = 0;
-//     hmap_t max_y = 0;
-//     bool has_data = false;
-//     p_storage->get_minmax(p_key, p_lod_level, min_y, max_y, has_data);
-//     AABB box = _get_node_AABB(p_key, min_y, max_y, p_size);
-//     real_t distance_limit = lod_visibility_range[p_lod_level];
-
-//     if (!aabb_intersects_sphere(box, p_viewer_position, distance_limit)) {
-//         return OutOfRange;
-//     }
-
-//     IntersectType frustum_it = p_parent_inside_frustum ? Inside : _aabb_intersects_frustum(box);
-
-//     if (frustum_it == Outside) {
-//         return OutOfFrustum;
-//     }
-
-//     NodeSelectionResult res_subnode_tl = Undefined;
-//     NodeSelectionResult res_subnode_tr = Undefined;
-//     NodeSelectionResult res_subnode_bl = Undefined;
-//     NodeSelectionResult res_subnode_br = Undefined;
-
-//     if (p_lod_level > p_stop_at_lod_level) {
-//         int next_lod = p_lod_level - 1;
-//         real_t next_distance_limit = lod_visibility_range[next_lod];
-//         uint16_t x = 2 * p_key.cell.x;
-//         uint16_t z = 2 * p_key.cell.z;
-//         uint16_t half_size = p_size / 2;
-
-//         if (aabb_intersects_sphere(box, p_viewer_position, next_distance_limit)) {
-//             bool completely_in_frustum = frustum_it == Inside;
-//             res_subnode_tl = _lod_select(p_viewer_position, p_storage, completely_in_frustum, NodeKey(p_key.sector, CellKey(x, z)), half_size, next_lod, p_stop_at_lod_level);
-//             ERR_FAIL_COND_V(res_subnode_tl == MaxReached, MaxReached);
-//             res_subnode_tr = _lod_select(p_viewer_position, p_storage, completely_in_frustum, NodeKey(p_key.sector, CellKey(x + 1ui16, z)), half_size, next_lod, p_stop_at_lod_level);
-//             ERR_FAIL_COND_V(res_subnode_tr == MaxReached, MaxReached);
-//             res_subnode_bl = _lod_select(p_viewer_position, p_storage, completely_in_frustum, NodeKey(p_key.sector, CellKey(x, z + 1ui16)), half_size, next_lod, p_stop_at_lod_level);
-//             ERR_FAIL_COND_V(res_subnode_bl == MaxReached, MaxReached);
-//             res_subnode_br = _lod_select(p_viewer_position, p_storage, completely_in_frustum, NodeKey(p_key.sector, CellKey(x + 1ui16, z + 1ui16)), half_size, next_lod, p_stop_at_lod_level);
-//             ERR_FAIL_COND_V(res_subnode_br == MaxReached, MaxReached);
-//         } else {
-//             uint16_t sector_x = p_key.sector.x * sector_size;
-//             uint16_t sector_z = p_key.sector.z * sector_size;
-
-//             if (sector_x + x * half_size >= world_size.x || sector_z + z * half_size >= world_size.y) {
-//                 res_subnode_tl = OutOfMap;
-//                 res_subnode_tr = OutOfMap;
-//                 res_subnode_bl = OutOfMap;
-//                 res_subnode_br = OutOfMap;
-//             } else {
-//                 if (sector_x + (x + 1ui16) * half_size >= world_size.x) {
-//                     res_subnode_tr = OutOfMap;
-//                     res_subnode_br = OutOfMap;
-//                 }
-
-//                 if (sector_z + (z + 1ui16) * half_size >= world_size.y) {
-//                     res_subnode_bl = OutOfMap;
-//                     res_subnode_br = OutOfMap;
-//                 }
-//             }
-//         }
-//     }
-
-//     const bool subnode_tl_sel = res_subnode_tl == Selected;
-//     const bool subnode_tr_sel = res_subnode_tr == Selected;
-//     const bool subnode_bl_sel = res_subnode_bl == Selected;
-//     const bool subnode_br_sel = res_subnode_br == Selected;
-//     const bool remove_subnode_tl = (res_subnode_tl & RESULT_DISCARD) || subnode_tl_sel;
-//     const bool remove_subnode_tr = (res_subnode_tr & RESULT_DISCARD) || subnode_tr_sel;
-//     const bool remove_subnode_bl = (res_subnode_bl & RESULT_DISCARD) || subnode_bl_sel;
-//     const bool remove_subnode_br = (res_subnode_br & RESULT_DISCARD) || subnode_br_sel;
-
-//     if (!(remove_subnode_tl && remove_subnode_tr && remove_subnode_bl && remove_subnode_br)) {
-//         if (selection_count >= MAX_NODE_SELECTION_COUNT) {
-//             return MaxReached;
-//         }
-
-//         if (has_data) {
-//             real_t max_distance_sqrd = aabb_max_distance_sqrd_from_point(box, p_viewer_position);
-//             bool node_morphs = max_distance_sqrd > morph_start[p_lod_level];
-//             uint16_t flags = QTNode::get_flags(p_lod_level, !remove_subnode_tl, !remove_subnode_tr, !remove_subnode_bl, !remove_subnode_br, node_morphs, p_key.cell);
-//             selected_buffer[selection_count] = QTNode(p_key, p_size, min_y, max_y, flags);
-//             selection_count++;
-//         }
-
-//         return Selected;
-//     }
-
-//     if (subnode_tl_sel || subnode_tr_sel || subnode_bl_sel || subnode_br_sel) {
-//         return Selected; // At least one child has been selected.
-//     } else {
-//         return OutOfFrustum;
-//     }
+    Ref<Image> image = Image::create_from_data(lod_levels, 1, false, Image::FORMAT_RGH, buffer);
+    Ref<ImageTexture> texture = ImageTexture::create_from_image(image);
+    return texture;
 }
 
-// _FORCE_INLINE_ AABB LODQuadTree::_get_node_AABB(const NodeKey &p_key, hmap_t min_y, hmap_t max_y, uint16_t p_size) const {
-//     const Vector3 sector_position = Vector3(p_key.sector.x * sector_size * chunk_size, 0, p_key.sector.z * sector_size * chunk_size) * map_scale;
-//     const Vector3 node_size = Vector3(p_size * chunk_size, max_y - min_y, p_size * chunk_size) * map_scale;
-//     const Vector3 node_position = Vector3(p_key.cell.x * node_size.x, min_y * map_scale.y, p_key.cell.z * node_size.z) + sector_position + world_offset;
-//     return AABB(node_position, node_size);
-// }
+Transform3D LODQuadTree::get_node_transform(const QTNode *p_node) const {
+    const Vector3 bx = Vector3(p_node->size * map_scale.x * chunk_size, 0.0, 0.0);
+    const Vector3 by = Vector3(0.0, 1.0, 0.0);
+    const Vector3 bz = Vector3(0.0, 0.0, p_node->size * map_scale.z * chunk_size);
+    const Vector3 sector_pos = Vector3(p_node->key.sector.x * sector_size * map_scale.x * chunk_size, 0, p_node->key.sector.z * sector_size * map_scale.z * chunk_size);
+    const Vector3 cell_pos = Vector3(p_node->key.cell.x * bx.x, 0.0, p_node->key.cell.z * bz.z);
+    const Vector3 origin = cell_pos + sector_pos + world_offset;
+    return Transform3D(Basis(bx, by, bz), origin);
+}
 
-// LODQuadTree::IntersectType LODQuadTree::_aabb_intersects_frustum(const AABB &p_aabb) const {
-//     int in = 0;
+LODQuadTree::NodeSelectionResult LODQuadTree::_lod_select(const Vector3 &p_viewer_position, const Ref<MapStorage> &p_storage, bool p_parent_inside_frustum, const NodeKey &p_key, uint16_t p_size, int p_lod_level, int p_stop_at_lod_level) {
+    hmap_t min_y = 0;
+    hmap_t max_y = 0;
+    p_storage->get_minmax(p_key, p_lod_level, min_y, max_y);
+    AABB box = _get_node_AABB(p_key, min_y, max_y, p_size);
+    real_t distance_limit = lod_visibility_range[p_lod_level];
 
-//     for (int iplane = 0; iplane < frustum.size(); ++iplane) {
-//         int out = 0;
+    if (!aabb_intersects_sphere(box, p_viewer_position, distance_limit)) {
+        return OUT_RANGE;
+    }
 
-//         for (int icorner = 0; icorner < 8; ++icorner) {
-//             Plane plane = frustum[iplane];
+    IntersectType frustum_it = p_parent_inside_frustum ? INSIDE : _aabb_intersects_frustum(box);
 
-//             if (plane.is_point_over(p_aabb.get_endpoint(icorner))) {
-//                 out++;
-//             }
-//         }
+    if (frustum_it == OUTSIDE) {
+        return OUT_FRUSTUM;
+    }
 
-//         if (out == 8) {
-//             return Outside;
-//         } else if (out == 0) {
-//             in++;
-//         }
-//     }
+    NodeSelectionResult res_subnode_tl = UNDEFINED;
+    NodeSelectionResult res_subnode_tr = UNDEFINED;
+    NodeSelectionResult res_subnode_bl = UNDEFINED;
+    NodeSelectionResult res_subnode_br = UNDEFINED;
 
-//     return in == frustum.size() ? Inside : Intersects;
-// }
+    if (p_lod_level > p_stop_at_lod_level) {
+        int next_lod = p_lod_level - 1;
+        real_t next_distance_limit = lod_visibility_range[next_lod];
+        uint16_t x = 2 * p_key.cell.x;
+        uint16_t z = 2 * p_key.cell.z;
+        uint16_t half_size = p_size / 2;
+
+        if (aabb_intersects_sphere(box, p_viewer_position, next_distance_limit)) {
+            bool completely_in_frustum = frustum_it == INSIDE;
+            res_subnode_tl = _lod_select(p_viewer_position, p_storage, completely_in_frustum, NodeKey(p_key.sector, CellKey(x, z)), half_size, next_lod, p_stop_at_lod_level);
+            ERR_FAIL_COND_V(res_subnode_tl == MAX_REACHED, MAX_REACHED);
+            res_subnode_tr = _lod_select(p_viewer_position, p_storage, completely_in_frustum, NodeKey(p_key.sector, CellKey(x + 1ui16, z)), half_size, next_lod, p_stop_at_lod_level);
+            ERR_FAIL_COND_V(res_subnode_tr == MAX_REACHED, MAX_REACHED);
+            res_subnode_bl = _lod_select(p_viewer_position, p_storage, completely_in_frustum, NodeKey(p_key.sector, CellKey(x, z + 1ui16)), half_size, next_lod, p_stop_at_lod_level);
+            ERR_FAIL_COND_V(res_subnode_bl == MAX_REACHED, MAX_REACHED);
+            res_subnode_br = _lod_select(p_viewer_position, p_storage, completely_in_frustum, NodeKey(p_key.sector, CellKey(x + 1ui16, z + 1ui16)), half_size, next_lod, p_stop_at_lod_level);
+            ERR_FAIL_COND_V(res_subnode_br == MAX_REACHED, MAX_REACHED);
+        } else {
+            uint16_t sector_x = p_key.sector.x * sector_size;
+            uint16_t sector_z = p_key.sector.z * sector_size;
+
+            if (sector_x + x * half_size >= world_size.x || sector_z + z * half_size >= world_size.y) {
+                res_subnode_tl = OUT_MAP;
+                res_subnode_tr = OUT_MAP;
+                res_subnode_bl = OUT_MAP;
+                res_subnode_br = OUT_MAP;
+            } else {
+                if (sector_x + (x + 1ui16) * half_size >= world_size.x) {
+                    res_subnode_tr = OUT_MAP;
+                    res_subnode_br = OUT_MAP;
+                }
+
+                if (sector_z + (z + 1ui16) * half_size >= world_size.y) {
+                    res_subnode_bl = OUT_MAP;
+                    res_subnode_br = OUT_MAP;
+                }
+            }
+        }
+    }
+
+    const bool subnode_tl_sel = res_subnode_tl == SELECTED;
+    const bool subnode_tr_sel = res_subnode_tr == SELECTED;
+    const bool subnode_bl_sel = res_subnode_bl == SELECTED;
+    const bool subnode_br_sel = res_subnode_br == SELECTED;
+    const bool remove_subnode_tl = (res_subnode_tl & RESULT_DISCARD) || subnode_tl_sel;
+    const bool remove_subnode_tr = (res_subnode_tr & RESULT_DISCARD) || subnode_tr_sel;
+    const bool remove_subnode_bl = (res_subnode_bl & RESULT_DISCARD) || subnode_bl_sel;
+    const bool remove_subnode_br = (res_subnode_br & RESULT_DISCARD) || subnode_br_sel;
+
+    if (!(remove_subnode_tl && remove_subnode_tr && remove_subnode_bl && remove_subnode_br)) {
+        if (selection_count >= MAX_NODE_SELECTION_COUNT) {
+            return MAX_REACHED;
+        }
+
+        real_t max_distance_sqrd = aabb_max_distance_sqrd_from_point(box, p_viewer_position);
+        bool node_morphs = max_distance_sqrd > morph_start[p_lod_level];
+        uint16_t flags = QTNode::get_flags(p_lod_level, !remove_subnode_tl, !remove_subnode_tr, !remove_subnode_bl, !remove_subnode_br, node_morphs, p_key.cell);
+        selected_buffer[selection_count] = QTNode(p_key, p_size, min_y, max_y, flags);
+        selection_count++;
+        return SELECTED;
+    }
+
+    if (subnode_tl_sel || subnode_tr_sel || subnode_bl_sel || subnode_br_sel) {
+        return SELECTED; // At least one child has been selected.
+    } else {
+        return OUT_FRUSTUM;
+    }
+}
+
+AABB LODQuadTree::_get_node_AABB(const NodeKey &p_key, hmap_t p_min_y, hmap_t p_max_y, uint16_t p_size) const {
+    const Vector3 sector_position = Vector3(p_key.sector.x * sector_size * chunk_size, 0, p_key.sector.z * sector_size * chunk_size) * map_scale;
+    const Vector3 node_size = Vector3(p_size * chunk_size, p_max_y - p_min_y, p_size * chunk_size) * map_scale;
+    const Vector3 node_position = Vector3(p_key.cell.x * node_size.x, p_min_y * map_scale.y, p_key.cell.z * node_size.z) + sector_position + world_offset;
+    return AABB(node_position, node_size);
+}
+
+LODQuadTree::IntersectType LODQuadTree::_aabb_intersects_frustum(const AABB &p_aabb) const {
+    int in = 0;
+
+    for (int iplane = 0; iplane < frustum.size(); ++iplane) {
+        int out = 0;
+
+        for (int icorner = 0; icorner < 8; ++icorner) {
+            Plane plane = frustum[iplane];
+
+            if (plane.is_point_over(p_aabb.get_endpoint(icorner))) {
+                out++;
+            }
+        }
+
+        if (out == 8) {
+            return OUTSIDE;
+        } else if (out == 0) {
+            in++;
+        }
+    }
+
+    return in == frustum.size() ? INSIDE : INTERSECTS;
+}
 
 LODQuadTree::LODQuadTree() {
 }
