@@ -110,12 +110,13 @@ Error MapStorage::load_headers() {
 }
 
 void MapStorage::clear() {
-    for (KeyValue<CellKey, Region*> &kv : regions) {
+    for (KeyValue<CellKey, Region *> &kv : regions) {
         Region *region = kv.value;
         memdelete(region);
     }
 
     regions.clear();
+    _clear_sectors();
 
 //     if (minmax_buffer) {
 //         memdelete(minmax_buffer);
@@ -274,6 +275,7 @@ void MapStorage::get_minmax(const NodeKey &p_key, int p_lod, hmap_t &r_min, hmap
 
 void MapStorage::allocate_buffers(int p_sector_chunks, int p_num_nodes, int p_lods, const Vector3 &p_map_scale, real_t p_far_view) {
     stop_io();
+    _clear_sectors();
     specs.set_sector_info(p_sector_chunks, p_lods);
     // map_scale = p_map_scale;
     // const int sector_cells = sector_size * chunk_size;
@@ -614,6 +616,14 @@ void MapStorage::_bind_methods() {
 //     BIND_ENUM_CONSTANT(STAT_BLOCK_COUNT);
 }
 
+void MapStorage::_clear_sectors() {
+    for (KeyValue<CellKey, Sector *> &kv : sectors) {
+        Sector *sector = kv.value;
+        memdelete(sector);
+    }
+
+    sectors.clear();
+}
 // void MapStorage::_process_requests(void *p_storage) {
 //     MapStorage *storage = static_cast<MapStorage *>(p_storage);
 

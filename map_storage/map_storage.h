@@ -427,6 +427,7 @@ private:
 //     int _next_layer();
 //     void _load_hmap(const NodeKey &p_region_key, const NodeKey &p_sector_key, int p_lod, const IORequest &p_request);
 //     // void _clean_hmap();
+    void _clear_sectors();
 
 protected:
 //     bool _set(const StringName &p_name, const Variant &p_value);

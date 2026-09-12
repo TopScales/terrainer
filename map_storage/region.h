@@ -12,11 +12,6 @@
 #ifndef TERRAINER_REGION_H
 #define TERRAINER_REGION_H
 
-// #include <atomic>
-// #include <cstdlib>
-// #include <thread>
-// #include <memory>
-
 #include "../utils/math.h"
 #include "core/io/file_access.h"
 
@@ -155,13 +150,13 @@ private:
             hmap_lod_offsets[region_lods + chunk_lods] = hmap_offset;
             region_buffer_size = minmax_offset;
             hmap_buffer_size = hmap_offset;
+            dirty = false;
         }
 
         void set_sector_info(uint16_t p_sector_size, int p_lods) {
             sector_size = p_sector_size;
             lods = p_lods;
-            real_t nreg = (real_t)region_size / (real_t)sector_size;
-            sector_regions = MIN((int)nreg, 1);
+            sector_regions = MAX(sector_size / region_size, 1);
 
             if (sector_minmax_lod_offsets) {
                 memfree(sector_minmax_lod_offsets);
@@ -172,7 +167,7 @@ private:
                 int extra_lods = lods - region_lods;
                 sector_minmax_lod_offsets = (size_t *)memalloc((extra_lods + 1) * sizeof(size_t));
                 size_t minmax_offset = 0;
-                size_t side = sector_regions;
+                size_t side = sector_regions >> 1;
 
                 for (int ilod = 0; ilod < extra_lods; ++ilod) {
                     sector_minmax_lod_offsets[ilod] = minmax_offset;
@@ -229,12 +224,12 @@ private:
     void write_header() const;
     _FORCE_INLINE_ hmap_t *get_hmap_chunk(size_t p_lod, size_t p_chunk_idx) const;
     _FORCE_INLINE_ hmap_t *get_hmap_chunk_pad(size_t p_lod, size_t p_chunk_idx, ChunkPad p_pad) const;
-    _FORCE_INLINE_ MinMax get_minmax(size_t p_lod, size_t p_block_idx) const {
+    _FORCE_INLINE_ MinMax get_minmax(size_t p_lod, size_t p_node_idx) const {
 #ifdef TERRAINER_DEBUG
         ERR_FAIL_INDEX_V_EDMSG(p_lod, specs.region_lods, MinMax(specs.default_height, specs.default_height + 1), "LOD out of range.");
-        ERR_FAIL_INDEX_V_EDMSG(p_block_idx, specs.minmax_lod_offsets[p_lod + 1] - specs.minmax_lod_offsets[p_lod], MinMax(specs.default_height, specs.default_height + 1), "Block out of range.");
+        ERR_FAIL_INDEX_V_EDMSG(p_node_idx, specs.minmax_lod_offsets[p_lod + 1] - specs.minmax_lod_offsets[p_lod], MinMax(specs.default_height, specs.default_height + 1), "Block out of range.");
 #endif
-        return *(minmax_buffer + specs.minmax_lod_offsets[p_lod] + p_block_idx);
+        return *(minmax_buffer + specs.minmax_lod_offsets[p_lod] + p_node_idx);
     }
 
 public:

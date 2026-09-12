@@ -13,7 +13,8 @@
 
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
-// #include "utils/compat_marshalls.h"
+#include "utils/compat_marshalls.h"
+#include "servers/rendering/shader_include_db.h"
 // #include "utils/macros.h"
 // #include "utils/math.h"
 
@@ -97,61 +98,7 @@ Vector2i Terrain::get_world_regions() const {
 
 void Terrain::set_material(const Ref<ShaderMaterial> &p_material) {
 	material = p_material;
-	_material = material;
-
-	if (_material.is_valid()) {
-		if (mesh_valid) {
-			RenderingServer::get_singleton()->mesh_surface_set_material(mesh, 0, _material->get_rid());
-		}
-
-		material_flags = SHADER_IS_SET;
-		Ref<Shader> shader = _material->get_shader();
-
-		if (shader.is_valid() && shader->get_mode() == Shader::MODE_SPATIAL) {
-			List<PropertyInfo> params;
-			shader->get_shader_uniform_list(&params);
-
-			for (PropertyInfo &pi : params) {
-				if (pi.name == "morph_data") {
-					if (pi.type == Variant::Type::OBJECT && pi.class_name == "Texture2D") {
-						material_flags |= SHADER_PARAM_MORPH_DATA;
-					}
-				} else if (pi.name == "grid_const") {
-					if (pi.type == Variant::Type::VECTOR2) {
-						material_flags |= SHADER_PARAM_GRID_CONST;
-					}
-				// } else if (pi.name == "instance_data") {
-				// 	if (pi.type == Variant::Type::OBJECT && pi.class_name == "Texture2D") {
-				// 		material_flags |= SHADER_PARAM_INSTANCE_DATA;
-				// 	}
-				// } else if (pi.name == "hmap_array") {
-				// 	if (pi.type == Variant::Type::OBJECT && pi.class_name == "Texture2DArray") {
-				// 		material_flags |= SHADER_PARAM_HMAP_ARRAY;
-				// 	}
-				// } else if (pi.name == "normals_array") {
-				// 	if (pi.type == Variant::Type::OBJECT && pi.class_name == "Texture2DArray") {
-				// 		material_flags |= SHADER_PARAM_NORMALS_ARRAY;
-				// 	}
-				}
-			}
-		}
-
-		if (material_flags & SHADER_PARAM_MORPH_DATA) {
-			Ref<ImageTexture> morph_texture = quad_tree.get_morph_texture();
-			_material->set_shader_parameter("morph_data", morph_texture);
-		}
-
-		if ((material_flags & SHADER_PARAM_GRID_CONST) && storage_status == OK) {
-			Vector2 grid_const = Vector2(0.5 * (real_t)storage->get_chunk_size(), 2.0 / (real_t)storage->get_chunk_size());
-			_material->set_shader_parameter("grid_const", grid_const);
-		}
-
-		if (_default_shader.is_valid()) {
-			RS::get_singleton()->free_rid(_default_shader);
-		}
-	} else {
-		material_flags = 0;
-	}
+	_set_material();
 }
 
 Ref<ShaderMaterial> Terrain::get_material() const {
@@ -189,23 +136,45 @@ real_t Terrain::get_lod_distance_ratio() const {
 // 	return quad_tree.selection_count;
 // }
 
-// void Terrain::set_debug_nodes_aabb_enabled(bool p_enabled) {
-// 	if (p_enabled == debug_nodes_aabb_enabled) {
-// 		return;
-// 	}
+void Terrain::set_debug_show_lod_color(bool p_show) {
+	debug_show_lod_color = p_show;
+	_set_material();
+	notify_property_list_changed();
+}
 
-// 	if (p_enabled) {
-// 		debug_nodes_aabb_enabled = true;
-// 		_debug_nodes_aabb_create();
-// 		dirty = true;
-// 	} else {
-// 		_debug_nodes_aabb_free();
-// 	}
-// }
+bool Terrain::is_debug_show_lod_color() const {
+	return debug_show_lod_color;
+}
 
-// bool Terrain::is_debug_nodes_aabb_enabled() const {
-// 	return debug_nodes_aabb_enabled;
-// }
+void Terrain::set_debug_show_wireframe(bool p_show) {
+	debug_show_wireframe = p_show;
+
+	if (debug_show_lod_color) {
+		_set_material();
+	}
+}
+
+bool Terrain::is_debug_show_wireframe() const {
+	return debug_show_wireframe;
+}
+
+void Terrain::set_debug_nodes_aabb_enabled(bool p_enabled) {
+	if (p_enabled == debug_nodes_aabb_enabled) {
+		return;
+	}
+
+	if (p_enabled) {
+		debug_nodes_aabb_enabled = true;
+		_debug_nodes_aabb_create();
+		dirty = true;
+	} else {
+		_debug_nodes_aabb_free();
+	}
+}
+
+bool Terrain::is_debug_nodes_aabb_enabled() const {
+	return debug_nodes_aabb_enabled;
+}
 
 void Terrain::_notification(int p_what) {
 	switch (p_what) {
@@ -244,7 +213,7 @@ void Terrain::_notification(int p_what) {
 			_update_viewer(get_process_delta_time());
 
 			if (dirty) {
-				_update_chunks();
+				_update_nodes();
 			}
 
 			storage->process();
@@ -270,8 +239,12 @@ void Terrain::_bind_methods() {
 // 	ClassDB::bind_method(D_METHOD("info_get_lod_nodes_count", "level"), &Terrain::info_get_lod_nodes_count);
 // 	ClassDB::bind_method(D_METHOD("info_get_selected_nodes_count"), &Terrain::info_get_selected_nodes_count);
 
-// 	ClassDB::bind_method(D_METHOD("set_debug_nodes_aabb_enabled", "enabled"), &Terrain::set_debug_nodes_aabb_enabled);
-// 	ClassDB::bind_method(D_METHOD("is_debug_nodes_aabb_enabled"), &Terrain::is_debug_nodes_aabb_enabled);
+	ClassDB::bind_method(D_METHOD("set_debug_show_lod_color", "show"), &Terrain::set_debug_show_lod_color);
+	ClassDB::bind_method(D_METHOD("is_debug_show_lod_color"), &Terrain::is_debug_show_lod_color);
+	ClassDB::bind_method(D_METHOD("set_debug_show_wireframe", "show"), &Terrain::set_debug_show_wireframe);
+	ClassDB::bind_method(D_METHOD("is_debug_show_wireframe"), &Terrain::is_debug_show_wireframe);
+	ClassDB::bind_method(D_METHOD("set_debug_nodes_aabb_enabled", "enabled"), &Terrain::set_debug_nodes_aabb_enabled);
+	ClassDB::bind_method(D_METHOD("is_debug_nodes_aabb_enabled"), &Terrain::is_debug_nodes_aabb_enabled);
 
 	ADD_PROPERTY(PropertyInfo(Variant::OBJECT, "storage", PROPERTY_HINT_RESOURCE_TYPE, "MapStorage"), "set_storage", "get_storage");
 	ADD_PROPERTY(PropertyInfo(Variant::VECTOR3, "map_scale"), "set_map_scale", "get_map_scale");
@@ -282,8 +255,10 @@ void Terrain::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::INT, "lod_detailed_chunks_radius", PROPERTY_HINT_RANGE, "1,16"), "set_lod_detailed_chunks_radius", "get_lod_detailed_chunks_radius");
 	ADD_PROPERTY(PropertyInfo(Variant::FLOAT, "lod_distance_ratio", PROPERTY_HINT_RANGE, "1.5,10.0,0.1"), "set_lod_distance_ratio", "get_lod_distance_ratio");
 
-// 	ADD_GROUP("Debug", "debug_");
-// 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "debug_nodes_aabb_enabled"), "set_debug_nodes_aabb_enabled", "is_debug_nodes_aabb_enabled");
+	ADD_GROUP("Debug", "debug_");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "debug_show_lod_color"), "set_debug_show_lod_color", "is_debug_show_lod_color");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "debug_show_wireframe"), "set_debug_show_wireframe", "is_debug_show_wireframe");
+	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "debug_nodes_aabb_enabled"), "set_debug_nodes_aabb_enabled", "is_debug_nodes_aabb_enabled");
 }
 
 PackedStringArray Terrain::get_configuration_warnings() const {
@@ -296,6 +271,12 @@ PackedStringArray Terrain::get_configuration_warnings() const {
 	}
 
 	return warnings;
+}
+
+void Terrain::_validate_property(PropertyInfo &p_property) const {
+	if (p_property.name == "debug_show_wireframe") {
+		p_property.usage = debug_show_lod_color ? PROPERTY_USAGE_DEFAULT : PROPERTY_USAGE_STORAGE;
+	}
 }
 
 void Terrain::_enter_world() {
@@ -319,10 +300,10 @@ void Terrain::_enter_world() {
 	rs->instance_set_scenario(mm_instance, scenario);
 	rs->instance_set_transform(mm_instance, xform);
 
-	// if (debug_nodes_aabb_enabled) {
-	// 	rs->instance_set_scenario(debug_aabb.instance, scenario);
-	// 	rs->instance_set_transform(debug_aabb.instance, xform);
-	// }
+	if (debug_nodes_aabb_enabled) {
+		rs->instance_set_scenario(debug_aabb.instance, scenario);
+		rs->instance_set_transform(debug_aabb.instance, xform);
+	}
 
 	inside_world = true;
 }
@@ -331,9 +312,9 @@ void Terrain::_exit_world() {
 	RenderingServer *const rs = RenderingServer::get_singleton();
 	rs->instance_set_scenario(mm_instance, RID());
 
-	// if (debug_nodes_aabb_enabled) {
-	// 	rs->instance_set_scenario(debug_aabb.instance, RID());
-	// }
+	if (debug_nodes_aabb_enabled) {
+		rs->instance_set_scenario(debug_aabb.instance, RID());
+	}
 
 	inside_world = false;
 }
@@ -342,9 +323,9 @@ void Terrain::_update_visibility() {
 	RenderingServer *const rs = RenderingServer::get_singleton();
 	rs->instance_set_visible(mm_instance, is_visible_in_tree());
 
-	// if (debug_nodes_aabb_enabled) {
-	// 	rs->instance_set_visible(debug_aabb.instance, is_visible_in_tree());
-	// }
+	if (debug_nodes_aabb_enabled) {
+		rs->instance_set_visible(debug_aabb.instance, is_visible_in_tree());
+	}
 }
 
 void Terrain::_update_transform() {
@@ -352,9 +333,9 @@ void Terrain::_update_transform() {
 	RenderingServer *const rs = RenderingServer::get_singleton();
 	rs->instance_set_transform(mm_instance, xform);
 
-	// if (debug_nodes_aabb_enabled) {
-	// 	rs->instance_set_transform(debug_aabb.instance, xform);
-	// }
+	if (debug_nodes_aabb_enabled) {
+		rs->instance_set_transform(debug_aabb.instance, xform);
+	}
 }
 
 void Terrain::_update_viewer(double p_delta) {
@@ -399,9 +380,9 @@ void Terrain::_update_viewer(double p_delta) {
 	}
 }
 
-void Terrain::_update_chunks() {
+void Terrain::_update_nodes() {
 	if (!(material_flags && SHADER_IS_SET)) {
-		_set_default_material();
+		_set_material();
 	}
 
 	storage->update_specs();
@@ -438,7 +419,7 @@ void Terrain::_update_chunks() {
 	int instance_index = 0;
 
 	if (rs->multimesh_get_instance_count(mm_chunks) < quad_tree.selection_count) {
-		_allocate_mmesh_data(rs);
+		rs->multimesh_allocate_data(mm_chunks, quad_tree.selection_count, RenderingServerEnums::MULTIMESH_TRANSFORM_3D);
 	}
 
 	for (int i = 0; i < quad_tree.selection_count; ++i) {
@@ -449,11 +430,52 @@ void Terrain::_update_chunks() {
 		instance_index++;
 	}
 
-	rs->multimesh_set_visible_instances(mm_chunks, quad_tree.selection_count);
+	rs->multimesh_set_visible_instances(mm_chunks, instance_index);
 
-// 	if (debug_nodes_aabb_enabled) {
-// 		_debug_nodes_aabb_draw();
-// 	}
+	if ((material_flags & SHADER_PARAM_INSTANCE_DATA || debug_nodes_aabb_enabled) && quad_tree.selection_count > 0) {
+		_set_instance_data();
+	}
+
+	if (debug_nodes_aabb_enabled) {
+		_debug_nodes_aabb_draw();
+	}
+}
+
+void Terrain::_set_instance_data() {
+	int count = quad_tree.selection_count;
+	const bool expand = nodes_max < count;
+
+	if (expand) {
+		nodes_max = count;
+		mmesh_instance_data.resize(nodes_max * MMESH_INSTANCE_DATA_SIZE);
+	}
+
+	uint8_t *instance_data = mmesh_instance_data.ptrw();
+
+	for (int i = 0; i < count; ++i) {
+		const LODQuadTree::QTNode *node = quad_tree.get_selected_node(i);
+		int lod = node->get_lod_level();
+
+		const size_t data_index = i * MMESH_INSTANCE_DATA_SIZE;
+		const uint64_t data_bytes = (uint64_t(node->flags) << 32);
+		encode_uint64(data_bytes, instance_data + data_index);
+	}
+
+	if (expand) {
+		mmesh_instance_data_img = Image::create_from_data(nodes_max, 1, false, Image::FORMAT_RGF, mmesh_instance_data);
+		mmesh_instance_data_tex = ImageTexture::create_from_image(mmesh_instance_data_img);
+
+		if (material_flags & SHADER_PARAM_INSTANCE_DATA) {
+			_material->set_shader_parameter("instance_data", mmesh_instance_data_tex);
+		}
+
+		if (debug_nodes_aabb_enabled) {
+			debug_aabb.material->set_shader_parameter("instance_data", mmesh_instance_data_tex);
+		}
+	} else {
+		mmesh_instance_data_img->set_data(nodes_max, 1, false, Image::FORMAT_RGF, mmesh_instance_data);
+		mmesh_instance_data_tex->update(mmesh_instance_data_img);
+	}
 }
 
 void Terrain::_set_viewport_camera() {
@@ -543,14 +565,25 @@ void Terrain::_set_lod_levels() {
 	storage->allocate_buffers(quad_tree.sector_size, num_nodes, quad_tree.lod_levels, map_scale, far_view);
 	dirty = true;
 
-	if (material_flags & SHADER_PARAM_MORPH_DATA) {
-		Ref<ImageTexture> morph_texture = quad_tree.get_morph_texture();
-		_material->set_shader_parameter("morph_data", morph_texture);
+	if (quad_tree.lod_levels > 0) {
+		if (material_flags & SHADER_PARAM_MORPH_DATA) {
+			Ref<ImageTexture> morph_texture = quad_tree.get_morph_texture();
+			_material->set_shader_parameter("morph_data", morph_texture);
+		}
+
+		if (material_flags & SHADER_PARAM_LOD_COLORS || debug_nodes_aabb_enabled) {
+			_debug_set_lod_colors();
+
+			if (material_flags & SHADER_PARAM_LOD_COLORS) {
+				_material->set_shader_parameter("debug_lod_colors", debug_lod_colors_tex);
+			}
+
+			if (debug_nodes_aabb_enabled) {
+				debug_aabb.material->set_shader_parameter("debug_lod_colors", debug_lod_colors_tex);
+			}
+		}
 	}
 
-	// if (debug_nodes_aabb_enabled) {
-	// 	_debug_nodes_aabb_set_colors();
-	// }
 }
 
 void Terrain::_storage_changed() {
@@ -586,232 +619,449 @@ void Terrain::_set_update_distance_tolerance_squared() {
 	update_distance_tolerance_squared *= update_distance_tolerance_squared;
 }
 
+void Terrain::_set_material() {
+	material_flags = 0;
+
+	if (!mesh_valid) {
+		return;
+	}
+
+	Callable update_material = callable_mp(this, &Terrain::_update_material_params);
+
+	if (_material.is_valid() && _material->is_connected("changed", update_material)) {
+		_material->disconnect_changed(update_material);
+	}
+
+	if (debug_show_lod_color) {
+		_set_debug_material();
+	} else if (material.is_valid()) {
+		_material = material;
+		_update_material_params();
+		_material->connect_changed(update_material);
+
+		if (_shader.is_valid()) {
+			RS::get_singleton()->free_rid(_shader);
+		}
+	} else {
+		_set_default_material();
+	}
+
+	RenderingServer::get_singleton()->mesh_surface_set_material(mesh, 0, _material->get_rid());
+	_clear_material_params();
+}
+
 void Terrain::_set_default_material() {
-	if (mesh_valid) {
-		_material.instantiate();
-		RenderingServer *const rs = RenderingServer::get_singleton();
-		_default_shader = rs->shader_create();
-		const String shader_code = R"(
+	_material.instantiate();
+	RenderingServer *const rs = RenderingServer::get_singleton();
+
+	if (_shader.is_null()) {
+		_shader = rs->shader_create();
+	}
+
+	const String shader_code = R"(
 shader_type spatial;
 
-uniform sampler2D morph_data: filter_nearest;
+uniform sampler2D instance_data: filter_nearest;
 uniform vec2 grid_const = vec2(16.0, 0.0625);
+uniform sampler2D morph_data: filter_nearest;
+
+const uint FLAG_TOP_LEFT = 1u << 4u;
+const uint FLAG_TOP_RIGHT = 1u << 5u;
+const uint FLAG_BOTTOM_LEFT = 1u << 6u;
+const uint FLAG_BOTTOM_RIGHT = 1u << 7u;
+const float NaN = 0.0 / 0.0;
+
+varying flat uint FLAGS;
+
+// Morphs input vertex from high to low detailed mesh position.
+vec2 morph_vertex(vec2 in_vertex, float morph_k) {
+vec2 frac_part = fract(in_vertex * vec2(grid_const.x, grid_const.x)) * vec2(grid_const.y, grid_const.y);
+return in_vertex - frac_part * morph_k;
+}
 
 void vertex() {
+	vec2 raw_instance_data = texelFetch(instance_data, ivec2(INSTANCE_ID, 0), 0).rg;
+	FLAGS = floatBitsToUint(raw_instance_data.g);
+
+	// Morph mesh to match next LOD meshes.
+	int lod = int(FLAGS & uint(0x000F));
+	vec2 morph_const = texelFetch(morph_data, ivec2(lod, 0), 0).xy;
+	float d = length((MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz);
+	float morph_k = 1.0f - clamp(morph_const.x - d * morph_const.y, 0.0, 1.0);
+	vec2 morphed_pos = morph_vertex(VERTEX.xz, morph_k);
+
+	bool used = morphed_pos.x <= 0.5 && morphed_pos.y <= 0.5 && bool(FLAGS & FLAG_TOP_LEFT) ||
+		morphed_pos.x >= 0.5 && morphed_pos.y <= 0.5 && bool(FLAGS & FLAG_TOP_RIGHT) ||
+		morphed_pos.x <= 0.5 && morphed_pos.y >= 0.5 && bool(FLAGS & FLAG_BOTTOM_LEFT) ||
+		morphed_pos.x >= 0.5 && morphed_pos.y >= 0.5 && bool(FLAGS & FLAG_BOTTOM_RIGHT);
+	VERTEX = used ? vec3(morphed_pos.x, 0.0, morphed_pos.y) : vec3(NaN, NaN, NaN);
 }
 
 void fragment() {
-	ALBEDO = vec3(1.0, 1.0, 1.0);
+	ALBEDO = vec3(0.2, 0.9, 0.3);
 }
 	)";
-		rs->shader_set_code(_default_shader, shader_code);
-		RID mat_rid = _material->get_rid();
-		rs->material_set_shader(mat_rid, _default_shader);
-		material_flags = SHADER_IS_SET | SHADER_PARAM_MORPH_DATA | SHADER_PARAM_GRID_CONST;
-		rs->mesh_surface_set_material(mesh, 0, mat_rid);
+	rs->shader_set_code(_shader, shader_code);
+	RID mat_rid = _material->get_rid();
+	rs->material_set_shader(mat_rid, _shader);
+	material_flags = SHADER_PARAM_DEFAULT;
+	Ref<ImageTexture> morph_texture = quad_tree.get_morph_texture();
+	_material->set_shader_parameter("morph_data", morph_texture);
+	Vector2 grid_const = Vector2(0.5 * (real_t)storage->get_chunk_size(), 2.0 / (real_t)storage->get_chunk_size());
+	_material->set_shader_parameter("grid_const", grid_const);
+
+	if (mmesh_instance_data_tex.is_valid()) {
+		_material->set_shader_parameter("instance_data", mmesh_instance_data_tex);
 	}
 }
 
-void Terrain::_allocate_mmesh_data(RenderingServer *p_rs) {
-	p_rs->multimesh_allocate_data(mm_chunks, quad_tree.selection_count, RenderingServerEnums::MULTIMESH_TRANSFORM_3D);
-	// mmesh_instance_data.resize(quad_tree.selection_count * MMESH_INSTANCE_DATA_SIZE);
-// 	mmesh_instance_data_img = Image::create_empty(quad_tree.selection_count, 1, false, Image::FORMAT_RGF);
-// 	mmesh_instance_data_tex = ImageTexture::create_from_image(mmesh_instance_data_img);
+void Terrain::_update_material_params() {
+	int prev_flags = material_flags;
+	material_flags = SHADER_IS_SET;
+	Ref<Shader> shader = _material->get_shader();
 
-// 	if (material_flags & SHADER_PARAM_INSTANCE_DATA) {
-// 		material->set_shader_parameter("instance_data", mmesh_instance_data_tex);
-// 	}
+	if (shader.is_valid() && shader->get_mode() == Shader::MODE_SPATIAL) {
+		List<PropertyInfo> params;
+		shader->get_shader_uniform_list(&params);
+
+		for (PropertyInfo &pi : params) {
+			if (pi.name == "morph_data") {
+				if (pi.type == Variant::Type::OBJECT && pi.hint_string == "Texture2D") {
+					material_flags |= SHADER_PARAM_MORPH_DATA;
+				}
+			} else if (pi.name == "grid_const") {
+				if (pi.type == Variant::Type::VECTOR2) {
+					material_flags |= SHADER_PARAM_GRID_CONST;
+				}
+			} else if (pi.name == "debug_lod_colors") {
+				if (pi.type == Variant::Type::OBJECT && pi.hint_string == "Texture2D") {
+					material_flags |= SHADER_PARAM_LOD_COLORS;
+				}
+			} else if (pi.name == "instance_data") {
+				if (pi.type == Variant::Type::OBJECT && pi.hint_string == "Texture2D") {
+					material_flags |= SHADER_PARAM_INSTANCE_DATA;
+				}
+			}
+		}
+	}
+
+	if (quad_tree.lod_levels > 0 && (material_flags & SHADER_PARAM_MORPH_DATA) && !(prev_flags & SHADER_PARAM_MORPH_DATA)) {
+		Ref<ImageTexture> morph_texture = quad_tree.get_morph_texture();
+		_material->set_shader_parameter("morph_data", morph_texture);
+	}
+
+	if (storage_status == OK && (material_flags & SHADER_PARAM_GRID_CONST) && !(prev_flags & SHADER_PARAM_GRID_CONST)) {
+		Vector2 grid_const = Vector2(0.5 * (real_t)storage->get_chunk_size(), 2.0 / (real_t)storage->get_chunk_size());
+		_material->set_shader_parameter("grid_const", grid_const);
+	}
+
+	if (quad_tree.lod_levels > 0 && (material_flags & SHADER_PARAM_LOD_COLORS) && !(prev_flags & SHADER_PARAM_LOD_COLORS)) {
+		_debug_set_lod_colors();
+		_material->set_shader_parameter("debug_lod_colors", debug_lod_colors_tex);
+	}
+
+	if (mmesh_instance_data_tex.is_valid() && (material_flags & SHADER_PARAM_INSTANCE_DATA) && !(prev_flags & SHADER_PARAM_INSTANCE_DATA)) {
+		_material->set_shader_parameter("instance_data", mmesh_instance_data_tex);
+	}
 }
 
-// void Terrain::_debug_nodes_aabb_create() {
-// 	// Create debug mesh.
-// 	const PackedVector3Array vertices = {
-// 		// Beam Top Back.
-// 		Vector3(0,1,0), Vector3(1,1,0), Vector3(1,1,0), Vector3(0,1,0), // [0-3]
-// 		Vector3(0,1,0), Vector3(1,1,0), // [4-5]
-// 		Vector3(0,1,0), Vector3(1,1,0), // [6-7]
-// 		// Beam Top Left.
-// 		Vector3(0,1,0), Vector3(0,1,1), Vector3(0,1,1), // [8-10]
-// 		Vector3(0,1,1), // [11]
-// 		Vector3(0,1,0), Vector3(0,1,1), // [12-13]
-// 		// Beam Top Front.
-// 		Vector3(0,1,1), Vector3(1,1,1), Vector3(1,1,1), // [14-16]
-// 		Vector3(1,1,1), // [17]
-// 		Vector3(0,1,1), Vector3(1,1,1), // [18-19]
-// 		// Beam Top Right.
-// 		Vector3(1,1,0), Vector3(1,1,1), // [20,21]
-// 		Vector3(1,1,0), Vector3(1,1,1), // [22-23]
-// 		// Beam Back Left.
-// 		Vector3(0,1,0), // [24]
-// 		Vector3(0,0,0), Vector3(0,0,0), Vector3(0,0,0), Vector3(0,0,0), // [25-28]
-// 		// Beam Back Right.
-// 		Vector3(1,1,0), // [29]
-// 		Vector3(1,0,0), Vector3(1,0,0), Vector3(1,0,0), Vector3(1,0,0), // [30-33]
-// 		// Beam Front Left.
-// 		Vector3(0,1,1), // [34]
-// 		Vector3(0,0,1), Vector3(0,0,1), Vector3(0,0,1), Vector3(0,0,1), // [35-38]
-// 		// Beam Front Right.
-// 		Vector3(1,1,1), // [39]
-// 		Vector3(1,0,1), Vector3(1,0,1), Vector3(1,0,1), Vector3(1,0,1), // [40-43]
-// 	};
-// 	const PackedInt32Array indices = {
-// 		// Beam Top Back.
-// 		0,1,2, 0,2,3,
-// 		0,4,1, 4,5,1,
-// 		4,6,5, 6,7,5,
-// 		3,2,6, 2,7,6,
-// 		// Beam Top Left.
-// 		0,8,10, 0,10,9,
-// 		0,9,11, 0,11,4,
-// 		4,11,13, 4,13,12,
-// 		8,12,10, 12,13,10,
-// 		// Beam Top Front.
-// 		9,14,15, 14,16,15,
-// 		9,15,11, 15,17,11,
-// 		11,17,18, 18,17,19,
-// 		18,19,14, 14,19,16,
-// 		// Beam Top Right.
-// 		1,15,20, 20,15,21,
-// 		1,5,15, 5,17,15,
-// 		5,23,17, 5,22,23,
-// 		20,21,22, 22,21,23,
-// 		// Beam Back Left.
-// 		0,26,8, 0,25,26,
-// 		0,3,27, 0,27,25,
-// 		3,24,28, 3,28,27,
-// 		24,8,26, 24,26,28,
-// 		// Beam Back Right.
-// 		1,20,30, 30,20,31,
-// 		1,30,2, 2,30,32,
-// 		29,2,32, 29,32,33,
-// 		20,29,33, 20,33,31,
-// 		// Beam Front Left.
-// 		9,10,36, 9,36,35,
-// 		14,9,35, 14,35,37,
-// 		14,37,38, 14,38,34,
-// 		10,34,38, 10,38,36,
-// 		// Beam Front Right.
-// 		15,40,21, 21,40,41,
-// 		15,16,42, 15,42,40,
-// 		16,39,42, 39,43,42,
-// 		39,21,41, 39,41,43,
-// 	};
-// 	const PackedColorArray colors = {
-// 		// Beam Top Back.
-// 		Color(0.5,0.5,0.5), Color(0.5,0.5,0.5), Color(0.5,0.5,1.0), Color(0.5,0.5,1.0),
-// 		Color(0.5,0.0,0.5), Color(0.5,0.0,0.5),
-// 		Color(0.5,0.0,1.0), Color(0.5,0.0,1.0),
-// 		// Beam Top Left.
-// 		Color(1.0,0.5,0.5), Color(0.5,0.5,0.5), Color(1.0,0.5,0.5),
-// 		Color(0.5,0.0,0.5),
-// 		Color(1.0,0.0,0.5), Color(1.0,0.0,0.5),
-// 		// Beam Top Front.
-// 		Color(0.5,0.5,0.0), Color(0.5,0.5,0.5), Color(0.5,0.5,0.0),
-// 		Color(0.5,0.0,0.5),
-// 		Color(0.5,0.0,0.0), Color(0.5,0.0,0.0),
-// 		// Beam Top Right.
-// 		Color(0.0,0.5,0.5), Color(0.0,0.5,0.5),
-// 		Color(0.0,0.0,0.5), Color(0.0, 0.0, 0.5),
-// 		// Beam Back Left.
-// 		Color(1.0,0.5,1.0),
-// 		Color(0.5,0.5,0.5), Color(1.0,0.5,0.5), Color(0.5,0.5,1.0), Color(1.0,0.5,1.0),
-// 		// Beam Back Right.
-// 		Color(0.0,0.5,1.0),
-// 		Color(0.5,0.5,0.5), Color(0.0,0.5,0.5), Color(0.5,0.5,1.0), Color(0.0,0.5,1.0),
-// 		// Beam Front Left.
-// 		Color(1.0,0.5,0.0),
-// 		Color(0.5, 0.5, 0.5), Color(1.0,0.5,0.5), Color(0.5,0.5,0.0), Color(1.0,0.5,0.0),
-// 		// Beam Front Right.
-// 		Color(0.0,0.5,0.0),
-// 		Color(0.5,0.5,0.5), Color(0.0,0.5,0.5), Color(0.5,0.5,0.0), Color(0.0,0.5,0.0),
-// 	};
-// 	Array arrays;
-// 	arrays.resize(Mesh::ARRAY_MAX);
-// 	arrays[Mesh::ARRAY_VERTEX] = vertices;
-// 	arrays[Mesh::ARRAY_INDEX] = indices;
-// 	arrays[Mesh::ARRAY_COLOR] = colors;
-// 	RenderingServer *const rs = RenderingServer::get_singleton();
-// 	debug_aabb.mesh = rs->mesh_create();
-// 	rs->mesh_add_surface_from_arrays(debug_aabb.mesh, RenderingServer::PRIMITIVE_TRIANGLES, arrays);
-// 	debug_aabb.shader = rs->shader_create();
-// 	const String shader_code = R"(
-// shader_type spatial;
-// render_mode unshaded, world_vertex_coords;
+void Terrain::_clear_material_params() {
+	if (!(material_flags & SHADER_PARAM_LOD_COLORS)) {
+		debug_lod_colors_tex = nullptr;
+	}
 
-// uniform float width = 0.1;
+	if (!(material_flags & SHADER_PARAM_INSTANCE_DATA) && !debug_nodes_aabb_enabled) {
+		mmesh_instance_data.clear();
+		mmesh_instance_data_img = nullptr;
+		mmesh_instance_data_tex = nullptr;
+		nodes_max = 0;
+	}
+}
 
-// varying vec3 color;
+void Terrain::_debug_nodes_aabb_create() {
+	// Create debug mesh.
+	const PackedVector3Array vertices = {
+		// Beam Top Back.
+		Vector3(0,1,0), Vector3(1,1,0), Vector3(1,1,0), Vector3(0,1,0), // [0-3]
+		Vector3(0,1,0), Vector3(1,1,0), // [4-5]
+		Vector3(0,1,0), Vector3(1,1,0), // [6-7]
+		// Beam Top Left.
+		Vector3(0,1,0), Vector3(0,1,1), Vector3(0,1,1), // [8-10]
+		Vector3(0,1,1), // [11]
+		Vector3(0,1,0), Vector3(0,1,1), // [12-13]
+		// Beam Top Front.
+		Vector3(0,1,1), Vector3(1,1,1), Vector3(1,1,1), // [14-16]
+		Vector3(1,1,1), // [17]
+		Vector3(0,1,1), Vector3(1,1,1), // [18-19]
+		// Beam Top Right.
+		Vector3(1,1,0), Vector3(1,1,1), // [20,21]
+		Vector3(1,1,0), Vector3(1,1,1), // [22-23]
+		// Beam Back Left.
+		Vector3(0,1,0), // [24]
+		Vector3(0,0,0), Vector3(0,0,0), Vector3(0,0,0), Vector3(0,0,0), // [25-28]
+		// Beam Back Right.
+		Vector3(1,1,0), // [29]
+		Vector3(1,0,0), Vector3(1,0,0), Vector3(1,0,0), Vector3(1,0,0), // [30-33]
+		// Beam Front Left.
+		Vector3(0,1,1), // [34]
+		Vector3(0,0,1), Vector3(0,0,1), Vector3(0,0,1), Vector3(0,0,1), // [35-38]
+		// Beam Front Right.
+		Vector3(1,1,1), // [39]
+		Vector3(1,0,1), Vector3(1,0,1), Vector3(1,0,1), Vector3(1,0,1), // [40-43]
+	};
+	const PackedInt32Array indices = {
+		// Beam Top Back.
+		0,1,2, 0,2,3,
+		0,4,1, 4,5,1,
+		4,6,5, 6,7,5,
+		3,2,6, 2,7,6,
+		// Beam Top Left.
+		0,8,10, 0,10,9,
+		0,9,11, 0,11,4,
+		4,11,13, 4,13,12,
+		8,12,10, 12,13,10,
+		// Beam Top Front.
+		9,14,15, 14,16,15,
+		9,15,11, 15,17,11,
+		11,17,18, 18,17,19,
+		18,19,14, 14,19,16,
+		// Beam Top Right.
+		1,15,20, 20,15,21,
+		1,5,15, 5,17,15,
+		5,23,17, 5,22,23,
+		20,21,22, 22,21,23,
+		// Beam Back Left.
+		0,26,8, 0,25,26,
+		0,3,27, 0,27,25,
+		3,24,28, 3,28,27,
+		24,8,26, 24,26,28,
+		// Beam Back Right.
+		1,20,30, 30,20,31,
+		1,30,2, 2,30,32,
+		29,2,32, 29,32,33,
+		20,29,33, 20,33,31,
+		// Beam Front Left.
+		9,10,36, 9,36,35,
+		14,9,35, 14,35,37,
+		14,37,38, 14,38,34,
+		10,34,38, 10,38,36,
+		// Beam Front Right.
+		15,40,21, 21,40,41,
+		15,16,42, 15,42,40,
+		16,39,42, 39,43,42,
+		39,21,41, 39,41,43,
+	};
+	const PackedColorArray colors = {
+		// Beam Top Back.
+		Color(0.5,0.5,0.5), Color(0.5,0.5,0.5), Color(0.5,0.5,1.0), Color(0.5,0.5,1.0),
+		Color(0.5,0.0,0.5), Color(0.5,0.0,0.5),
+		Color(0.5,0.0,1.0), Color(0.5,0.0,1.0),
+		// Beam Top Left.
+		Color(1.0,0.5,0.5), Color(0.5,0.5,0.5), Color(1.0,0.5,0.5),
+		Color(0.5,0.0,0.5),
+		Color(1.0,0.0,0.5), Color(1.0,0.0,0.5),
+		// Beam Top Front.
+		Color(0.5,0.5,0.0), Color(0.5,0.5,0.5), Color(0.5,0.5,0.0),
+		Color(0.5,0.0,0.5),
+		Color(0.5,0.0,0.0), Color(0.5,0.0,0.0),
+		// Beam Top Right.
+		Color(0.0,0.5,0.5), Color(0.0,0.5,0.5),
+		Color(0.0,0.0,0.5), Color(0.0, 0.0, 0.5),
+		// Beam Back Left.
+		Color(1.0,0.5,1.0),
+		Color(0.5,0.5,0.5), Color(1.0,0.5,0.5), Color(0.5,0.5,1.0), Color(1.0,0.5,1.0),
+		// Beam Back Right.
+		Color(0.0,0.5,1.0),
+		Color(0.5,0.5,0.5), Color(0.0,0.5,0.5), Color(0.5,0.5,1.0), Color(0.0,0.5,1.0),
+		// Beam Front Left.
+		Color(1.0,0.5,0.0),
+		Color(0.5, 0.5, 0.5), Color(1.0,0.5,0.5), Color(0.5,0.5,0.0), Color(1.0,0.5,0.0),
+		// Beam Front Right.
+		Color(0.0,0.5,0.0),
+		Color(0.5,0.5,0.5), Color(0.0,0.5,0.5), Color(0.5,0.5,0.0), Color(0.0,0.5,0.0),
+	};
+	Array arrays;
+	arrays.resize(Mesh::ARRAY_MAX);
+	arrays[Mesh::ARRAY_VERTEX] = vertices;
+	arrays[Mesh::ARRAY_INDEX] = indices;
+	arrays[Mesh::ARRAY_COLOR] = colors;
+	RenderingServer *const rs = RenderingServer::get_singleton();
+	debug_aabb.mesh = rs->mesh_create();
+	rs->mesh_add_surface_from_arrays(debug_aabb.mesh, RenderingServerEnums::PRIMITIVE_TRIANGLES, arrays);
+	debug_aabb.shader = rs->shader_create();
+	const String shader_code = R"(
+shader_type spatial;
+render_mode unshaded, world_vertex_coords;
 
-// void vertex() {
-// 	vec3 displacement = (2.0 * COLOR.xyz - 1.0) * width;
-// 	VERTEX += displacement;
-// 	color = INSTANCE_CUSTOM.rgb;
-// }
+uniform float width = 0.1;
+uniform sampler2D instance_data: filter_nearest;
+uniform sampler2D debug_lod_colors: filter_nearest;
 
-// void fragment() {
-// 	ALBEDO = color;
-// }
-// )";
-// 	rs->shader_set_code(debug_aabb.shader, shader_code);
-// 	debug_aabb.material = rs->material_create();
-// 	rs->material_set_shader(debug_aabb.material, debug_aabb.shader);
-// 	rs->mesh_surface_set_material(debug_aabb.mesh, 0, debug_aabb.material);
-// 	debug_aabb.multimesh = rs->multimesh_create();
-// 	rs->multimesh_set_mesh(debug_aabb.multimesh, debug_aabb.mesh);
+varying vec3 color;
 
-// 	if (inside_world) {
-// 		debug_aabb.instance = rs->instance_create2(debug_aabb.multimesh, get_world_3d()->get_scenario());
-// 		rs->instance_set_visible(debug_aabb.instance, is_visible_in_tree());
-// 		rs->instance_set_transform(debug_aabb.instance, get_global_transform());
-// 	} else {
-// 		debug_aabb.instance = rs->instance_create();
-// 		rs->instance_set_base(debug_aabb.instance, debug_aabb.multimesh);
-// 	}
+void vertex() {
+	vec2 raw_instance_data = texelFetch(instance_data, ivec2(INSTANCE_ID, 0), 0).rg;
+	uint flags = floatBitsToUint(raw_instance_data.g);
+	int lod = int(flags & uint(0x000F));
+	vec3 displacement = (2.0 * COLOR.xyz - 1.0) * width;
+	VERTEX += displacement;
+	color = texelFetch(debug_lod_colors, ivec2(lod, 0), 0).rgb;
+}
 
-// 	rs->instance_geometry_set_cast_shadows_setting(debug_aabb.instance, RenderingServer::SHADOW_CASTING_SETTING_OFF);
-// 	_debug_nodes_aabb_set_colors();
-// }
+void fragment() {
+	ALBEDO = color;
+}
+)";
+	rs->shader_set_code(debug_aabb.shader, shader_code);
+	debug_aabb.material.instantiate();
+	RID mat_rid = debug_aabb.material->get_rid();
+	rs->material_set_shader(mat_rid, debug_aabb.shader);
+	rs->mesh_surface_set_material(debug_aabb.mesh, 0, mat_rid);
+	debug_aabb.multimesh = rs->multimesh_create();
+	rs->multimesh_set_mesh(debug_aabb.multimesh, debug_aabb.mesh);
 
-// void Terrain::_debug_nodes_aabb_free() {
-// 	RenderingServer *const rs = RenderingServer::get_singleton();
-// 	rs->free_rid(debug_aabb.instance);
-// 	rs->free_rid(debug_aabb.multimesh);
-// 	rs->free_rid(debug_aabb.mesh);
-// 	rs->free_rid(debug_aabb.material);
-// 	rs->free_rid(debug_aabb.shader);
-// 	debug_aabb.lod_colors.clear();
-// 	debug_nodes_aabb_enabled = false;
-// }
+	if (inside_world) {
+		debug_aabb.instance = rs->instance_create2(debug_aabb.multimesh, get_world_3d()->get_scenario());
+		rs->instance_set_visible(debug_aabb.instance, is_visible_in_tree());
+		rs->instance_set_transform(debug_aabb.instance, get_global_transform());
+	} else {
+		debug_aabb.instance = rs->instance_create();
+		rs->instance_set_base(debug_aabb.instance, debug_aabb.multimesh);
+	}
 
-// void Terrain::_debug_nodes_aabb_draw() const {
-// 	RenderingServer *const rs = RenderingServer::get_singleton();
-// 	int num_nodes = quad_tree.selection_count;
-// 	rs->multimesh_allocate_data(debug_aabb.multimesh, num_nodes, RenderingServer::MULTIMESH_TRANSFORM_3D, false, true);
+	rs->instance_geometry_set_cast_shadows_setting(debug_aabb.instance, RenderingServerEnums::SHADOW_CASTING_SETTING_OFF);
 
-// 	for (int i = 0; i < num_nodes; ++i) {
-// 		const LODQuadTree::QTNode *node = quad_tree.get_selected_node(i);
-// 		const int lod = node->get_lod_level();
-// 		const real_t margin = DEBUG_AABB_LOD0_MARGIN + lod * DEBUG_AABB_MARGIN_LOD_SCALE_FACTOR;
-// 		const Transform3D xform = quad_tree.get_node_transform(node);
-// 		rs->multimesh_instance_set_transform(debug_aabb.multimesh, i, xform);
-// 		rs->multimesh_instance_set_custom_data(debug_aabb.multimesh, i, debug_aabb.lod_colors[lod]);
-// 	}
-// }
+	if (quad_tree.lod_levels > 0) {
+		_debug_set_lod_colors();
+		debug_aabb.material->set_shader_parameter("debug_lod_colors", debug_lod_colors_tex);
+	}
 
-// void Terrain::_debug_nodes_aabb_set_colors() {
-// 	if (debug_aabb.lod_colors.size() == quad_tree.lod_levels) {
-// 		return;
-// 	}
+	if (mmesh_instance_data_tex.is_valid()) {
+		debug_aabb.material->set_shader_parameter("instance_data", mmesh_instance_data_tex);
+	}
+}
 
-// 	debug_aabb.lod_colors.resize(quad_tree.lod_levels);
-// 	const int half = (quad_tree.lod_levels + 1) / 2;
+void Terrain::_debug_nodes_aabb_free() {
+	RenderingServer *const rs = RenderingServer::get_singleton();
+	rs->free_rid(debug_aabb.instance);
+	rs->free_rid(debug_aabb.multimesh);
+	rs->free_rid(debug_aabb.mesh);
+	rs->free_rid(debug_aabb.shader);
+	debug_aabb.material = nullptr;
+	debug_nodes_aabb_enabled = false;
 
-// 	for (int i = 0; i < quad_tree.lod_levels; ++i) {
-// 		int index = i / 2 + half * (i % 2);
-// 		Color color = Color::from_hsv((real_t)index / (real_t)quad_tree.lod_levels, 0.8, 0.9);
-// 		debug_aabb.lod_colors.set(i, color);
-// 	}
-// }
+	if (!(material_flags & SHADER_PARAM_INSTANCE_DATA)) {
+		mmesh_instance_data.clear();
+		mmesh_instance_data_img = nullptr;
+		mmesh_instance_data_tex = nullptr;
+		nodes_max = 0;
+	}
+}
+
+void Terrain::_debug_nodes_aabb_draw() const {
+	RenderingServer *const rs = RenderingServer::get_singleton();
+	int num_nodes = quad_tree.selection_count;
+	rs->multimesh_allocate_data(debug_aabb.multimesh, num_nodes, RenderingServerEnums::MULTIMESH_TRANSFORM_3D);
+
+	for (int i = 0; i < num_nodes; ++i) {
+		const LODQuadTree::QTNode *node = quad_tree.get_selected_node(i);
+		const int lod = node->get_lod_level();
+		const Transform3D xform = quad_tree.get_node_transform(node);
+		rs->multimesh_instance_set_transform(debug_aabb.multimesh, i, xform);
+	}
+}
+
+void Terrain::_debug_set_lod_colors() {
+	if (debug_lod_colors_tex.is_valid() && debug_lod_colors_tex->get_width() == quad_tree.lod_levels) {
+		return;
+	}
+
+	PackedByteArray colors;
+	colors.resize(3 * quad_tree.lod_levels);
+	const int half = (quad_tree.lod_levels + 1) / 2;
+
+	for (int i = 0; i < quad_tree.lod_levels; ++i) {
+		int index = i / 2 + half * (i % 2);
+		Color color = Color::from_hsv((real_t)index / (real_t)quad_tree.lod_levels, 0.8, 0.9);
+		int ii = 3 * i;
+		colors.write[ii] = color.get_r8();
+		colors.write[ii + 1] = color.get_g8();
+		colors.write[ii + 2] = color.get_b8();
+	}
+
+	Ref<Image> image = Image::create_from_data(quad_tree.lod_levels, 1, false, Image::FORMAT_RGB8, colors);
+	debug_lod_colors_tex = ImageTexture::create_from_image(image);
+}
+
+void Terrain::_set_debug_material() {
+	_material.instantiate();
+	RenderingServer *const rs = RenderingServer::get_singleton();
+
+	if (_shader.is_null()) {
+		_shader = rs->shader_create();
+	}
+
+	String shader_code = debug_show_wireframe ? "shader_type spatial;\nrender_mode wireframe;\n\n" : "shader_type spatial;\n\n";
+	shader_code += R"(
+uniform sampler2D instance_data: filter_nearest;
+uniform vec2 grid_const = vec2(16.0, 0.0625);
+uniform sampler2D morph_data: filter_nearest;
+uniform sampler2D debug_lod_colors: filter_nearest;
+
+const uint FLAG_TOP_LEFT = 1u << 4u;
+const uint FLAG_TOP_RIGHT = 1u << 5u;
+const uint FLAG_BOTTOM_LEFT = 1u << 6u;
+const uint FLAG_BOTTOM_RIGHT = 1u << 7u;
+const float NaN = 0.0 / 0.0;
+
+varying flat uint FLAGS;
+varying flat int LOD;
+varying vec3 color;
+
+// Morphs input vertex from high to low detailed mesh position.
+vec2 morph_vertex(vec2 in_vertex, float morph_k) {
+   vec2 frac_part = fract(in_vertex * vec2(grid_const.x, grid_const.x)) * vec2(grid_const.y, grid_const.y);
+   return in_vertex - frac_part * morph_k;
+}
+
+void vertex() {
+	vec2 raw_instance_data = texelFetch(instance_data, ivec2(INSTANCE_ID, 0), 0).rg;
+	FLAGS = floatBitsToUint(raw_instance_data.g);
+
+	// Morph mesh to match next LOD meshes.
+	LOD = int(FLAGS & uint(0x000F));
+	vec2 morph_const = texelFetch(morph_data, ivec2(LOD, 0), 0).xy;
+	float d = length((MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz);
+	float morph_k = 1.0f - clamp(morph_const.x - d * morph_const.y, 0.0, 1.0);
+	vec2 morphed_pos = morph_vertex(VERTEX.xz, morph_k);
+
+	bool used = morphed_pos.x <= 0.5 && morphed_pos.y <= 0.5 && bool(FLAGS & FLAG_TOP_LEFT) ||
+		morphed_pos.x >= 0.5 && morphed_pos.y <= 0.5 && bool(FLAGS & FLAG_TOP_RIGHT) ||
+		morphed_pos.x <= 0.5 && morphed_pos.y >= 0.5 && bool(FLAGS & FLAG_BOTTOM_LEFT) ||
+		morphed_pos.x >= 0.5 && morphed_pos.y >= 0.5 && bool(FLAGS & FLAG_BOTTOM_RIGHT);
+	VERTEX = used ? vec3(morphed_pos.x, 0.0, morphed_pos.y) : vec3(NaN, NaN, NaN);
+	color = texelFetch(debug_lod_colors, ivec2(LOD, 0), 0).rgb;
+}
+
+void fragment() {
+	ALBEDO = color;
+}
+	)";
+	rs->shader_set_code(_shader, shader_code);
+	RID mat_rid = _material->get_rid();
+	rs->material_set_shader(mat_rid, _shader);
+	material_flags = SHADER_PARAM_DEFAULT | SHADER_PARAM_LOD_COLORS;
+	Ref<ImageTexture> morph_texture = quad_tree.get_morph_texture();
+	_material->set_shader_parameter("morph_data", morph_texture);
+	Vector2 grid_const = Vector2(0.5 * (real_t)storage->get_chunk_size(), 2.0 / (real_t)storage->get_chunk_size());
+	_material->set_shader_parameter("grid_const", grid_const);
+	_debug_set_lod_colors();
+	_material->set_shader_parameter("debug_lod_colors", debug_lod_colors_tex);
+
+	if (mmesh_instance_data_tex.is_valid()) {
+		_material->set_shader_parameter("instance_data", mmesh_instance_data_tex);
+	}
+}
 
 Terrain::Terrain() {
 	RenderingServer *const rs = RenderingServer::get_singleton();
@@ -822,14 +1072,6 @@ Terrain::Terrain() {
 	rs->instance_set_base(mm_instance, mm_chunks);
 	set_notify_transform(true);
 	set_process_internal(true);
-
-// // 	include.instantiate();
-// // 	const String include_code = R"(
-// // float LOD = 1.0;
-// // )";
-// // 	include->set_code(include_code);
-// // 	include->set_path("res://TERRAIN", true);
-// // 	print_line(vformat("Include created. %s", include->to_string()));
 }
 
 Terrain::~Terrain() {
@@ -838,11 +1080,11 @@ Terrain::~Terrain() {
 	rs->free_rid(mm_chunks);
 	rs->free_rid(mesh);
 
-	if (_default_shader.is_valid()) {
-		rs->free_rid(_default_shader);
+	if (_shader.is_valid()) {
+		rs->free_rid(_shader);
 	}
 
-	// if (debug_nodes_aabb_enabled) {
-	// 	_debug_nodes_aabb_free();
-	// }
+	if (debug_nodes_aabb_enabled) {
+		_debug_nodes_aabb_free();
+	}
 }

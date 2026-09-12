@@ -18,8 +18,8 @@
 #include "servers/rendering/rendering_server.h"
 
 #ifdef TERRAINER_MODULE
-#include "scene/3d/node_3d.h"
 #include "scene/3d/camera_3d.h"
+#include "scene/3d/node_3d.h"
 #include "scene/resources/mesh.h"
 #endif // TERRAINER_MODULE
 
@@ -43,15 +43,14 @@ private:
     static const int SHADER_IS_SET = 1 << 0;
     static const int SHADER_PARAM_MORPH_DATA = 1 << 1;
     static const int SHADER_PARAM_GRID_CONST = 1 << 2;
-//     static const int SHADER_PARAM_INSTANCE_DATA = 4;
+    static const int SHADER_PARAM_LOD_COLORS = 1 << 3;
+    static const int SHADER_PARAM_INSTANCE_DATA = 1 << 4;
+    static const int SHADER_PARAM_DEFAULT = SHADER_IS_SET | SHADER_PARAM_MORPH_DATA | SHADER_PARAM_GRID_CONST | SHADER_PARAM_INSTANCE_DATA;
 //     static const int SHADER_PARAM_HMAP_ARRAY = 8;
 //     static const int SHADER_PARAM_NORMALS_ARRAY = 16;
 
 // //     static const int DIRTY_DATA = 1 << 1;
 // //     static const int DIRTY_CHUNKS = 1 << 2;
-
-//     static constexpr real_t DEBUG_AABB_LOD0_MARGIN = 2.0;
-//     static constexpr real_t DEBUG_AABB_MARGIN_LOD_SCALE_FACTOR = 0.5;
 
     Ref<MapStorage> storage;
     Vector3 map_scale = Vector3(1.0, 1.0, 1.0);
@@ -59,16 +58,17 @@ private:
     int lod_detailed_chunks_radius = 2;
     Ref<ShaderMaterial> material;
     Ref<ShaderMaterial> _material;
-    RID _default_shader;
+    RID _shader;
 
     RID mesh;
     bool mesh_valid = false;
     int material_flags = 0;
     RID mm_chunks;
     RID mm_instance;
-//     Ref<Image> mmesh_instance_data_img;
-//     Ref<ImageTexture> mmesh_instance_data_tex;
-//     PackedByteArray mmesh_instance_data;
+    int nodes_max = 0;
+    Ref<Image> mmesh_instance_data_img;
+    Ref<ImageTexture> mmesh_instance_data_tex;
+    PackedByteArray mmesh_instance_data;
 
     LODQuadTree quad_tree;
     Transform3D last_transform;
@@ -81,23 +81,26 @@ private:
     real_t update_distance_tolerance_squared = 1.0;
     bool dirty = false;
 
-//     struct DebugAABB {
-//         RID shader;
-//         RID material;
-//         RID mesh;
-//         RID multimesh;
-//         RID instance;
-//         PackedColorArray lod_colors;
-//     } debug_aabb;
+    bool debug_show_lod_color = false;
+    bool debug_show_wireframe = false;
+    bool debug_nodes_aabb_enabled = false;
+    Ref<ImageTexture> debug_lod_colors_tex;
 
-//     bool debug_nodes_aabb_enabled = false;
+    struct {
+        Ref<ShaderMaterial> material;
+        RID shader;
+        RID mesh;
+        RID multimesh;
+        RID instance;
+    } debug_aabb;
 
     void _enter_world();
     void _exit_world();
     void _update_visibility();
     void _update_transform();
     void _update_viewer(double p_delta);
-    void _update_chunks();
+    void _update_nodes();
+    _FORCE_INLINE_ void _set_instance_data();
 
     void _set_viewport_camera();
     void _storage_changed();
@@ -105,19 +108,22 @@ private:
     void _set_lod_levels();
     void _create_mesh();
     _FORCE_INLINE_ void _set_update_distance_tolerance_squared();
+    void _set_material();
     void _set_default_material();
+    void _update_material_params();
+    void _clear_material_params();
 
-    void _allocate_mmesh_data(RenderingServer *p_rs);
-
-//     void _debug_nodes_aabb_create();
-//     void _debug_nodes_aabb_free();
-//     void _debug_nodes_aabb_draw() const;
-//     void _debug_nodes_aabb_set_colors();
+    void _debug_set_lod_colors();
+    void _set_debug_material();
+    void _debug_nodes_aabb_create();
+    void _debug_nodes_aabb_free();
+    void _debug_nodes_aabb_draw() const;
 
 protected:
     void _notification(int p_what);
     static void _bind_methods();
     PackedStringArray get_configuration_warnings() const override;
+    void _validate_property(PropertyInfo &p_property) const;
 
 public:
     void set_camera(Camera3D *p_camera);
@@ -139,8 +145,12 @@ public:
 //     int info_get_lod_nodes_count(int p_level) const;
 //     int info_get_selected_nodes_count() const;
 
-//     void set_debug_nodes_aabb_enabled(bool p_enabled);
-//     bool is_debug_nodes_aabb_enabled() const;
+    void set_debug_show_lod_color(bool p_show);
+    bool is_debug_show_lod_color() const;
+    void set_debug_show_wireframe(bool p_show);
+    bool is_debug_show_wireframe() const;
+    void set_debug_nodes_aabb_enabled(bool p_enabled);
+    bool is_debug_nodes_aabb_enabled() const;
 
 	Terrain();
     ~Terrain();
