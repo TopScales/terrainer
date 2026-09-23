@@ -11,8 +11,10 @@
 
 #include "map_storage.h"
 
-#include "core/object/class_db.h"
 #include "../utils/math.h"
+#include "core/object/class_db.h"
+#include "servers/rendering/rendering_server.h"
+#include "servers/rendering/rendering_device.h"
 
 using namespace Terrainer;
 
@@ -58,6 +60,9 @@ void MapStorage::store_heightmap_data(const PackedByteArray &p_data, const Vecto
         Region *region = kv.value;
         region->store_hmap();
     }
+
+    _allocate_textures(num_layers, false);
+    emit_changed();
 }
 
 Error MapStorage::load_headers() {
@@ -118,25 +123,17 @@ void MapStorage::clear() {
     regions.clear();
     _clear_sectors();
 
-//     if (minmax_buffer) {
-//         memdelete(minmax_buffer);
-//     }
+    if (rd_hmap_texture.is_valid()) {
+        hmap_texture = nullptr;
+        RS::get_singleton()->get_rendering_device()->free_rid(rd_hmap_texture);
+        rd_hmap_texture = RID();
+    }
 
-//     if (hmap_buffer) {
-//         memdelete(hmap_buffer);
-//     }
-
-//     minmax_trackers.clear();
-
-//     for (int i = 0; i < textures_trackers.size(); ++i) {
-//         for (KeyValue<NodeKey, Tracker> &kv : textures_trackers.get(i)) {
-//             Tracker &tracker = kv.value;
-//             TextureData *td = (TextureData *)tracker.pointer;
-//             memdelete(td);
-//         }
-//     }
-
-//     textures_trackers.clear();
+    if (rd_normal_texture.is_valid()) {
+        normal_texture = nullptr;
+        RS::get_singleton()->get_rendering_device()->free_rid(rd_normal_texture);
+        rd_normal_texture = RID();
+    }
 }
 
 bool MapStorage::has_region(const Vector2i &p_region) const {
@@ -243,6 +240,7 @@ PackedInt32Array MapStorage::get_chunk_hmap(const Vector2i &p_region, int p_lod,
 // }
 
 void MapStorage::get_minmax(const NodeKey &p_key, int p_lod, hmap_t &r_min, hmap_t &r_max) {
+    ERR_FAIL_INDEX_EDMSG(p_lod, specs.lods, "Incorrect LOD level.");
     Sector **sector_ptr = sectors.getptr(p_key.sector);
     Sector *sector = nullptr;
 
@@ -277,6 +275,10 @@ void MapStorage::allocate_buffers(int p_sector_chunks, int p_num_nodes, int p_lo
     stop_io();
     _clear_sectors();
     specs.set_sector_info(p_sector_chunks, p_lods);
+    specs.scale = p_map_scale;
+    texture_layers.clear();
+    texture_layers.resize(p_lods);
+    _allocate_textures(p_num_nodes);
     // map_scale = p_map_scale;
     // const int sector_cells = sector_size * chunk_size;
     // const real_t sector_world_size_x = sector_cells * map_scale.x;
@@ -332,7 +334,6 @@ void MapStorage::allocate_buffers(int p_sector_chunks, int p_num_nodes, int p_lo
 //     }
 
 //     textures_trackers.resize(lods);
-//     _allocate_textures(p_num_nodes);
 //     const size_t hmap_count = p_num_nodes * hmap_buffer_size_factor;
 //     const size_t hmap_size = (chunk_size + 1) * (chunk_size + 1);
 
@@ -358,25 +359,50 @@ void MapStorage::allocate_buffers(int p_sector_chunks, int p_num_nodes, int p_lo
 //     }
 }
 
-// uint16_t MapStorage::get_node_texture_layer(const NodeKey &p_key, int p_lod) {
-//     ERR_FAIL_INDEX_V_EDMSG(p_lod, lods, 0, "Incorrect LOD level.");
-//     HashMap<NodeKey, Tracker> &map = textures_trackers.write[p_lod];
-//     Tracker *tracker = map.getptr(p_key);
+void MapStorage::allocate_textures(int p_layers) {
+    if (p_layers > num_layers) {
+        _allocate_textures(p_layers);
+    }
+}
 
-//     if (tracker) {
-//         tracker->frame = current_frame;
-//         tracker->in_frustum = true;
-//         TextureData *td = (TextureData *)tracker->pointer;
-//         return td->layer;
-//     } else {
-//         const auto it = map.insert(p_key, {current_frame, Tracker::Status::LOADING, true});
-//         tracker = &it->value;
-//         TextureData *td = memnew(TextureData);
-//         tracker->pointer = td;
-//         _add_request(p_key, tracker, DATA_TYPE_HEIGHT | DATA_TYPE_SPLAT, p_lod);
-//         return INVALID_TEXTURE_LAYER;
-//     }
-// }
+int MapStorage::get_node_texture_layer(const NodeKey &p_key, int p_lod) {
+    ERR_FAIL_INDEX_V_EDMSG(p_lod, specs.lods, 0, "Incorrect LOD level.");
+    HashMap<NodeKey, int> &map = texture_layers.write[p_lod];
+    int *layer_ptr = map.getptr(p_key);
+
+    if (layer_ptr) {
+        int layer = *layer_ptr;
+        TextureLayerData &layer_data = layers.write[layer];
+        layer_data.frame = current_frame;
+        return layer;
+    } else {
+        Sector **sector_ptr = sectors.getptr(p_key.sector);
+        Sector *sector = nullptr;
+
+        if (sector_ptr) {
+            sector = *sector_ptr;
+        } else {
+            sector = memnew(Sector(p_key.sector, regions, specs));
+            sectors[p_key.sector] = sector;
+        }
+
+        int layer = _next_layer();
+        TextureLayerData &layer_data = layers.write[layer];
+        layer_data.heights = sector->get_hmap(p_key.cell, p_lod);
+        layer_data.frame = current_frame;
+        layer_data.lod = p_lod;
+        layer_data.key = p_key;
+        layer_data.free = false;
+        RenderingDevice *rd = RS::get_singleton()->get_rendering_device();
+        rd->texture_update(rd_hmap_texture, layer, layer_data.heights.to_byte_array());
+        map[p_key] = layer;
+        return layer;
+    }
+}
+
+Ref<Texture2DArrayRD> MapStorage::get_hmap_texture() const {
+    return hmap_texture;
+}
 
 void MapStorage::update_viewer(const Vector3 &p_viewer_pos, const Vector3 &p_viewer_vel, const Vector3 &p_viewer_forward) {
     viewer_pos = p_viewer_pos;
@@ -407,7 +433,23 @@ void MapStorage::process() {
     // _submit_requests();
     // _process_results();
     // _clean_minmax();
-    // current_frame++;
+}
+
+void MapStorage::prepare() {
+    if (specs.dirty) {
+        specs.config();
+    }
+
+    _clean_layers();
+    current_frame++;
+}
+
+int MapStorage::get_region_file_size() {
+    if (specs.dirty) {
+        specs.config();
+    }
+
+    return specs.get_buffer_size() + Region::FILE_HEADER_INFO_SIZE;
 }
 
 // int MapStorage::get_buffer_stat(BufferType p_buffer, BufferStat p_stat) const {
@@ -953,39 +995,80 @@ void MapStorage::_clear_sectors() {
 //     }
 // }
 
-// void MapStorage::_allocate_textures(int p_layers) {
-//     RenderingDevice *rd = RenderingServer::get_singleton()->get_rendering_device();
+void MapStorage::_allocate_textures(int p_main_layers, bool p_use_extra_buffer) {
+    RenderingDevice *rd = RenderingServer::get_singleton()->get_rendering_device();
 
-//     if (num_layers != 0) {
-//         rd->free_rid(rd_heightmap_texture);
-//     }
+    if (rd_hmap_texture.is_valid()) {
+        hmap_texture = nullptr;
+        rd->free_rid(rd_hmap_texture);
+    }
 
-//     num_layers = p_layers * BUFFER_EXTRA_ALLOCATION_FACTOR;
-//     RenderingDevice::TextureFormat height_format;
-//     height_format.array_layers = num_layers;
-//     height_format.format = RenderingDevice::DATA_FORMAT_R16_UINT;
-//     height_format.width = chunk_size + 1;
-//     height_format.height = chunk_size + 1;
-//     height_format.mipmaps = 0;
-//     height_format.texture_type = RenderingDevice::TEXTURE_TYPE_2D_ARRAY;
-//     height_format.usage_bits = RenderingDevice::TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice::TEXTURE_USAGE_CAN_UPDATE_BIT;
-//     RenderingDevice::TextureView tex_view;
-//     rd_heightmap_texture = rd->texture_create(height_format, tex_view);
-//     heightmap_texture->set_texture_rd_rid(rd_heightmap_texture);
-//     used_layers = 0;
-//     unused_texture_layers.clear();
-// }
+    if (rd_normal_texture.is_valid()) {
+        normal_texture = nullptr;
+        rd->free_rid(rd_normal_texture);
+    }
 
-// int MapStorage::_next_layer() {
-//     if (!unused_texture_layers.is_empty()) {
-//         int new_size = unused_texture_layers.size() - 1;
-//         int layer = unused_texture_layers[new_size];
-//         unused_texture_layers.resize(new_size);
-//         return layer;
-//     } else {
-//         return used_layers++;
-//     }
-// }
+    num_layers = p_use_extra_buffer ? p_main_layers * BUFFER_EXTRA_ALLOCATION_FACTOR : p_main_layers;
+    RenderingDevice::TextureFormat height_format;
+    height_format.array_layers = num_layers;
+    height_format.format = RenderingDevice::DATA_FORMAT_R32_SFLOAT;
+    height_format.width = specs.chunk_size + 1;
+    height_format.height = specs.chunk_size + 1;
+    height_format.mipmaps = 1;
+    height_format.texture_type = RenderingDevice::TEXTURE_TYPE_2D_ARRAY;
+    height_format.usage_bits = RenderingDevice::TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice::TEXTURE_USAGE_CAN_UPDATE_BIT | RenderingDevice::TEXTURE_USAGE_CAN_COPY_FROM_BIT;
+    RenderingDevice::TextureView tex_view;
+    rd_hmap_texture = rd->texture_create(height_format, tex_view);
+    hmap_texture.instantiate();
+    hmap_texture->set_texture_rd_rid(rd_hmap_texture);
+    RenderingDevice::TextureFormat normal_format;
+    normal_format.array_layers = num_layers;
+    normal_format.format = RenderingDevice::DATA_FORMAT_R8G8B8_UINT;
+    normal_format.width = specs.chunk_size + 1;
+    normal_format.height = specs.chunk_size + 1;
+    normal_format.mipmaps = 1;
+    normal_format.texture_type = RenderingDevice::TEXTURE_TYPE_2D_ARRAY;
+    normal_format.usage_bits = RenderingDevice::TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice::TEXTURE_USAGE_CAN_UPDATE_BIT | RenderingDevice::TEXTURE_USAGE_CAN_COPY_FROM_BIT;
+    rd_normal_texture = rd->texture_create(normal_format, tex_view);
+    normal_texture.instantiate();
+    normal_texture->set_texture_rd_rid(rd_normal_texture);
+    used_layers = 0;
+    unused_texture_layers.clear();
+    layers.resize(num_layers);
+
+    for (int i = 0; i < texture_layers.size(); ++i) {
+        texture_layers.write[i].clear();
+    }
+}
+
+int MapStorage::_next_layer() {
+    if (!unused_texture_layers.is_empty()) {
+        int new_size = unused_texture_layers.size() - 1;
+        int layer = unused_texture_layers[new_size];
+        unused_texture_layers.resize(new_size);
+        return layer;
+    } else {
+        ERR_FAIL_COND_V_EDMSG(used_layers >= num_layers - 1, 0, "No texture layers are available.");
+        return used_layers++;
+    }
+}
+
+void MapStorage::_clean_layers() {
+    int used = used_layers - unused_texture_layers.size();
+    real_t utilization = (real_t)used / (real_t)num_layers;
+
+    if (utilization > CLEANUP_BUFFER_UTILIZATION) {
+        for (int i = 0; i < used_layers; ++i) {
+            TextureLayerData &layer_data = layers.write[i];
+
+            if (!layer_data.free && current_frame - layer_data.frame > CLEANUP_FRAME_TOLERANCE) {
+                layer_data.free = true;
+                texture_layers.write[layer_data.lod].erase(layer_data.key);
+                unused_texture_layers.push_back(i);
+            }
+        }
+    }
+}
 
 // void MapStorage::_load_hmap(const NodeKey &p_region_key, const NodeKey &p_sector_key, int p_lod, const IORequest &p_request) {
 //     Region **region_ptr = regions.getptr(p_region_key.sector);

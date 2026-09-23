@@ -17,7 +17,7 @@ bool Region::load() {
     HeaderInfo info;
     access->get_buffer((uint8_t *)&info, FILE_HEADER_INFO_SIZE);
 
-    for (int i = 0; i < MAGIC_SIZE; ++i) {
+    for (size_t i = 0; i < MAGIC_SIZE; ++i) {
         ERR_FAIL_COND_V_EDMSG(info.magic[i] != MAGIC_STRING[i], false, vformat("Region file %s has incorrect format.", access->get_path().get_file()));
     }
 
@@ -35,15 +35,43 @@ bool Region::load() {
 }
 
 void Region::load_hmap_region(const CellKey &p_region, const CellKey &p_regions, const PackedByteArray &p_data, const Vector2i &p_size) {
-    const int64_t buffer_size = specs.get_buffer_size();
-    const int32_t chunk_size = specs.chunk_size;
-    const int32_t region_size = specs.region_size;
-    const int32_t region_cells = region_size * chunk_size;
+    const Size buffer_size = specs.get_buffer_size();
+    const Size chunk_size = specs.chunk_size;
+    const Size region_size = specs.region_size;
+    const Size region_cells = region_size * chunk_size;
     buffer = (uint8_t *)memalloc(buffer_size);
     minmax_buffer = (MinMax *)buffer;
     hmap_buffer = (hmap_t *)(buffer + specs.get_minmax_buffer_size() * sizeof(MinMax));
-    const int32_t chunkp1 = chunk_size + 1;
     MinMax *minmax_ptr = minmax_buffer;
+    const Size node_xpd_size = chunk_size + 3;
+
+    for (Size chunk_iz = 0; chunk_iz < region_size; ++chunk_iz) {
+        for (Size chunk_ix = 0; chunk_ix < region_size; ++chunk_ix) {
+            uint8_t min_h = UINT8_MAX;
+            uint8_t max_h = 0;
+            const Size chunk_idx = chunk_ix + chunk_iz * region_size;
+            hmap_t *hmap_ptr = get_hmap_chunk(0, chunk_idx);
+
+            // Set chunk's heights.
+            for (Size cell_iz = 0; cell_iz < node_xpd_size; ++cell_iz) {
+                const Size data_z = CLAMP(cell_iz - 1 + chunk_iz * chunk_size + p_region.z * region_cells, 0, p_size.y - 1);
+
+                for (size_t cell_ix = 0; cell_ix <= chunk_size; ++cell_ix) {
+                    const size_t x = MIN(cell_ix + chunk_ix * chunk_size + p_region.x * region_cells, p_size.x - 1);
+                    const size_t index = x + z * p_size.x;
+                    const uint8_t h = p_data[index];
+                    min_h = MIN(min_h, h);
+                    max_h = MAX(max_h, h);
+                    *hmap_ptr = h;
+                    hmap_ptr++;
+                }
+            }
+        }
+    }
+
+
+
+    const Size chunkp1 = chunk_size + 1;
 
     for (int32_t chunk_iz = 0; chunk_iz < region_size; ++chunk_iz) {
         for (int32_t chunk_ix = 0; chunk_ix < region_size; ++chunk_ix) {
@@ -91,11 +119,13 @@ void Region::load_hmap_region(const CellKey &p_region, const CellKey &p_regions,
 
     size_t rsize = region_size >> 1;
     MinMax *prev_minmax = minmax_buffer;
-    size_t half_chunk = chunk_size >> 1;
+    const size_t half_chunk = chunk_size >> 1;
+    const size_t chunk_size_bytes = chunk_size * sizeof(hmap_t);
+    const size_t chunkp1_bytes = chunkp1 * sizeof(hmap_t);
 
     for (size_t ilod = 1; ilod < specs.region_lods; ++ilod) {
         MinMax *next_minmax = minmax_ptr;
-        size_t rsize2 = 2 * rsize;
+        const size_t rsize2 = 2 * rsize;
 
         for (size_t chunk_iz = 0; chunk_iz < rsize; ++chunk_iz) {
             for (size_t chunk_ix = 0; chunk_ix < rsize; ++chunk_ix) {
@@ -170,9 +200,9 @@ void Region::load_hmap_region(const CellKey &p_region, const CellKey &p_regions,
                 if (chunk_iz != 0) {
                     hmap_t *prev_row_ptr = get_hmap_chunk(ilod, chunk_idx - rsize) + chunkp1 * (chunk_size - 1);
                     hmap_t *top_pad_ptr = get_hmap_chunk_pad(ilod, chunk_idx, ChunkPad::Z_NEG);
-                    memcpy(top_pad_ptr, prev_row_ptr, chunk_size);
-                    memcpy(prev_row_ptr + chunkp1, hmap_ptr, chunk_size);
-                    memcpy(get_hmap_chunk_pad(ilod, chunk_idx - rsize, ChunkPad::Z_POS), hmap_ptr + chunkp1, chunk_size);
+                    memcpy(top_pad_ptr, prev_row_ptr, chunk_size_bytes);
+                    memcpy(prev_row_ptr + chunkp1, hmap_ptr, chunk_size_bytes);
+                    memcpy(get_hmap_chunk_pad(ilod, chunk_idx - rsize, ChunkPad::Z_POS), hmap_ptr + chunkp1, chunk_size_bytes);
 
                     if (chunk_ix < rsize - 1) {
                         hmap_t *prev_row_next_ptr = get_hmap_chunk(ilod, chunk_idx - rsize + 1);
@@ -241,7 +271,7 @@ void Region::load_hmap_region(const CellKey &p_region, const CellKey &p_regions,
             for (size_t ichunk = 0; ichunk < rsize; ++ichunk) {
                 hmap_t *top_pad = get_hmap_chunk_pad(ilod, ichunk, ChunkPad::Z_NEG);
                 const hmap_t *main_ptr = get_hmap_chunk(ilod, ichunk);
-                memcpy(top_pad, main_ptr, chunkp1);
+                memcpy(top_pad, main_ptr, chunkp1_bytes);
             }
 
             rsize >>= 1;
@@ -276,8 +306,8 @@ void Region::load_hmap_region(const CellKey &p_region, const CellKey &p_regions,
             for (size_t ichunk = 0; ichunk < rsize; ++ichunk) {
                 size_t chunk_idx = ichunk + rsize * (rsize - 1);
                 hmap_t *main_ptr = get_hmap_chunk(ilod, chunk_idx) + chunkp1 * (chunk_size - 1);
-                memcpy(main_ptr + chunkp1, main_ptr, chunkp1);
-                memcpy(get_hmap_chunk_pad(ilod, chunk_idx, ChunkPad::Z_POS), main_ptr, chunkp1);
+                memcpy(main_ptr + chunkp1, main_ptr, chunkp1_bytes);
+                memcpy(get_hmap_chunk_pad(ilod, chunk_idx, ChunkPad::Z_POS), main_ptr, chunkp1_bytes);
             }
 
             rsize >>= 1;
@@ -290,6 +320,7 @@ void Region::fill_hmap_region_pad(const CellKey &p_region, const CellKey &p_regi
     const size_t chunk_size = specs.chunk_size;
     const size_t region_size = specs.region_size;
     const size_t chunkp1 = chunk_size + 1;
+    const size_t chunkp1_bytes = chunkp1 * sizeof(hmap_t);
 
     if (p_region.x != 0) {
         const size_t prev_col_idx = (p_pool_index + pool_size - 1) % pool_size;
@@ -307,9 +338,9 @@ void Region::fill_hmap_region_pad(const CellKey &p_region, const CellKey &p_regi
 
                 for (size_t i = 0; i <= chunk_size; ++i) {
                     size_t ii = i * chunkp1;
-                    left_pad[i] = *prev_col_ptr + ii;
-                    prev_col_ptr[ii + 1] = *main_ptr + ii;
-                    prev_col_right_pad_ptr[i] = *main_ptr + ii + 1;
+                    left_pad[i] = *(prev_col_ptr + ii);
+                    prev_col_ptr[ii + 1] = *(main_ptr + ii);
+                    prev_col_right_pad_ptr[i] = *(main_ptr + ii + 1);
                 }
             }
 
@@ -345,10 +376,10 @@ void Region::fill_hmap_region_pad(const CellKey &p_region, const CellKey &p_regi
                 hmap_t *top_pad = get_hmap_chunk_pad(ilod, ichunk, ChunkPad::Z_NEG);
                 size_t prev_row_chunk_idx = ichunk + rsize * (rsize - 1);
                 hmap_t *prev_row_ptr = prev_row_region->get_hmap_chunk(ilod, prev_row_chunk_idx) + chunkp1 * (chunk_size - 1);
-                memcpy(top_pad, prev_row_ptr, chunkp1);
+                memcpy(top_pad, prev_row_ptr, chunkp1_bytes);
                 const hmap_t *main_ptr = get_hmap_chunk(ilod, ichunk);
-                memcpy(prev_row_ptr + chunkp1, main_ptr, chunkp1);
-                memcpy(prev_row_region->get_hmap_chunk_pad(ilod, prev_row_chunk_idx, ChunkPad::Z_POS), main_ptr + chunkp1, chunkp1);
+                memcpy(prev_row_ptr + chunkp1, main_ptr, chunkp1_bytes);
+                memcpy(prev_row_region->get_hmap_chunk_pad(ilod, prev_row_chunk_idx, ChunkPad::Z_POS), main_ptr + chunkp1, chunkp1_bytes);
             }
 
             rsize >>= 1;
@@ -415,8 +446,8 @@ void Region::write_header() const {
     access->store_buffer((uint8_t *)&info, FILE_HEADER_INFO_SIZE);
 }
 
-Region::hmap_t *Region::get_hmap_chunk(size_t p_lod, size_t p_chunk_idx) const {
-    size_t chunk_size = specs.hmap_lod_chunk_sizes[p_lod];
+Region::hmap_t *Region::get_hmap_chunk(size_t p_lod, Size p_chunk_idx) const {
+    Size chunk_size = specs.hmap_lod_chunk_sizes[p_lod];
     return hmap_buffer + specs.hmap_lod_offsets[p_lod] + chunk_size * p_chunk_idx;
 }
 

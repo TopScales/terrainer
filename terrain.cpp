@@ -385,7 +385,7 @@ void Terrain::_update_nodes() {
 		_set_material();
 	}
 
-	storage->update_specs();
+	storage->prepare();
 	const int sector_size = quad_tree.sector_size * storage->get_chunk_size();
 	const real_t sector_size_x = sector_size * map_scale.x;
 	const real_t sector_size_z = sector_size * map_scale.z;
@@ -448,6 +448,7 @@ void Terrain::_set_instance_data() {
 	if (expand) {
 		nodes_max = count;
 		mmesh_instance_data.resize(nodes_max * MMESH_INSTANCE_DATA_SIZE);
+		storage->allocate_textures(nodes_max);
 	}
 
 	uint8_t *instance_data = mmesh_instance_data.ptrw();
@@ -455,9 +456,15 @@ void Terrain::_set_instance_data() {
 	for (int i = 0; i < count; ++i) {
 		const LODQuadTree::QTNode *node = quad_tree.get_selected_node(i);
 		int lod = node->get_lod_level();
+		int texture_layer = storage->get_node_texture_layer(node->key, lod);
+		int layer_next_lod = texture_layer;
+
+		if (node->use_morph()) {
+			layer_next_lod = storage->get_node_texture_layer(node->key.next_lod(), lod + 1);
+		}
 
 		const size_t data_index = i * MMESH_INSTANCE_DATA_SIZE;
-		const uint64_t data_bytes = (uint64_t(node->flags) << 32);
+		const uint64_t data_bytes = (uint64_t(node->flags) << 32) | (layer_next_lod << 16) | texture_layer;
 		encode_uint64(data_bytes, instance_data + data_index);
 	}
 
@@ -562,10 +569,11 @@ void Terrain::_set_lod_levels() {
 	}
 
 	int num_nodes = quad_tree.set_lod_levels(far_view, lod_detailed_chunks_radius);
-	storage->allocate_buffers(quad_tree.sector_size, num_nodes, quad_tree.lod_levels, map_scale, far_view);
 	dirty = true;
 
 	if (quad_tree.lod_levels > 0) {
+		storage->allocate_buffers(quad_tree.sector_size, num_nodes, quad_tree.lod_levels, map_scale, far_view);
+
 		if (material_flags & SHADER_PARAM_MORPH_DATA) {
 			Ref<ImageTexture> morph_texture = quad_tree.get_morph_texture();
 			_material->set_shader_parameter("morph_data", morph_texture);
@@ -582,8 +590,11 @@ void Terrain::_set_lod_levels() {
 				debug_aabb.material->set_shader_parameter("debug_lod_colors", debug_lod_colors_tex);
 			}
 		}
-	}
 
+		if (material_flags & SHADER_PARAM_HMAP) {
+			_material->set_shader_parameter("hmap_tex", storage->get_hmap_texture());
+		}
+	}
 }
 
 void Terrain::_storage_changed() {
@@ -600,6 +611,10 @@ void Terrain::_storage_changed() {
 	if (material_flags & SHADER_PARAM_GRID_CONST) {
 		Vector2 grid_const = Vector2(0.5 * (real_t)storage->get_chunk_size(), 2.0 / (real_t)storage->get_chunk_size());
 		_material->set_shader_parameter("grid_const", grid_const);
+	}
+
+	if (material_flags & SHADER_PARAM_HMAP) {
+		_material->set_shader_parameter("hmap_tex", storage->get_hmap_texture());
 	}
 }
 
@@ -641,6 +656,7 @@ void Terrain::_set_material() {
 
 		if (_shader.is_valid()) {
 			RS::get_singleton()->free_rid(_shader);
+			_shader = RID();
 		}
 	} else {
 		_set_default_material();
@@ -741,6 +757,10 @@ void Terrain::_update_material_params() {
 				if (pi.type == Variant::Type::OBJECT && pi.hint_string == "Texture2D") {
 					material_flags |= SHADER_PARAM_INSTANCE_DATA;
 				}
+			} else if (pi.name == "hmap_tex") {
+				if (pi.type == Variant::Type::OBJECT && pi.hint_string == "TextureLayered") {
+					material_flags |= SHADER_PARAM_HMAP;
+				}
 			}
 		}
 	}
@@ -762,6 +782,10 @@ void Terrain::_update_material_params() {
 
 	if (mmesh_instance_data_tex.is_valid() && (material_flags & SHADER_PARAM_INSTANCE_DATA) && !(prev_flags & SHADER_PARAM_INSTANCE_DATA)) {
 		_material->set_shader_parameter("instance_data", mmesh_instance_data_tex);
+	}
+
+	if ((material_flags & SHADER_PARAM_HMAP) && !(prev_flags & SHADER_PARAM_HMAP)) {
+		_material->set_shader_parameter("hmap_tex", storage->get_hmap_texture());
 	}
 }
 
@@ -1006,6 +1030,7 @@ void Terrain::_set_debug_material() {
 uniform sampler2D instance_data: filter_nearest;
 uniform vec2 grid_const = vec2(16.0, 0.0625);
 uniform sampler2D morph_data: filter_nearest;
+uniform sampler2DArray hmap_tex: repeat_disable;
 uniform sampler2D debug_lod_colors: filter_nearest;
 
 const uint FLAG_TOP_LEFT = 1u << 4u;
@@ -1015,7 +1040,9 @@ const uint FLAG_BOTTOM_RIGHT = 1u << 7u;
 const float NaN = 0.0 / 0.0;
 
 varying flat uint FLAGS;
-varying flat int LOD;
+varying flat int LAYER;
+varying flat int LAYER_NEXT;
+varying vec2 UV_NEXT;
 varying vec3 color;
 
 // Morphs input vertex from high to low detailed mesh position.
@@ -1026,21 +1053,36 @@ vec2 morph_vertex(vec2 in_vertex, float morph_k) {
 
 void vertex() {
 	vec2 raw_instance_data = texelFetch(instance_data, ivec2(INSTANCE_ID, 0), 0).rg;
+	int layers = floatBitsToInt(raw_instance_data.r);
+	LAYER = layers & 0xFFFF;
+	LAYER_NEXT = layers >> 16;
 	FLAGS = floatBitsToUint(raw_instance_data.g);
+	int lod = int(FLAGS & uint(0x000F));
+	int qx = int(FLAGS & uint(0x1000)) >> 12;
+	int qz = int(FLAGS & uint(0x2000)) >> 13;
 
 	// Morph mesh to match next LOD meshes.
-	LOD = int(FLAGS & uint(0x000F));
-	vec2 morph_const = texelFetch(morph_data, ivec2(LOD, 0), 0).xy;
+	vec2 morph_const = texelFetch(morph_data, ivec2(lod, 0), 0).xy;
 	float d = length((MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz);
 	float morph_k = 1.0f - clamp(morph_const.x - d * morph_const.y, 0.0, 1.0);
 	vec2 morphed_pos = morph_vertex(VERTEX.xz, morph_k);
+	UV = morphed_pos;
+	UV_NEXT = 0.5 * morphed_pos + vec2(0.5 * float(qx), 0.5 * float(qz));
 
+	// Get height.
+	float height = texture(hmap_tex, vec3(UV, float(LAYER))).x;
+	float height_next = texture(hmap_tex, vec3(UV_NEXT, float(LAYER_NEXT))).x;
+	height = mix(height, float(height_next), morph_k);
+
+	// Set vertex.
 	bool used = morphed_pos.x <= 0.5 && morphed_pos.y <= 0.5 && bool(FLAGS & FLAG_TOP_LEFT) ||
 		morphed_pos.x >= 0.5 && morphed_pos.y <= 0.5 && bool(FLAGS & FLAG_TOP_RIGHT) ||
 		morphed_pos.x <= 0.5 && morphed_pos.y >= 0.5 && bool(FLAGS & FLAG_BOTTOM_LEFT) ||
 		morphed_pos.x >= 0.5 && morphed_pos.y >= 0.5 && bool(FLAGS & FLAG_BOTTOM_RIGHT);
-	VERTEX = used ? vec3(morphed_pos.x, 0.0, morphed_pos.y) : vec3(NaN, NaN, NaN);
-	color = texelFetch(debug_lod_colors, ivec2(LOD, 0), 0).rgb;
+	VERTEX = used ? vec3(morphed_pos.x, height, morphed_pos.y) : vec3(NaN, NaN, NaN);
+
+	// LOD color.
+	color = texelFetch(debug_lod_colors, ivec2(lod, 0), 0).rgb;
 }
 
 void fragment() {
@@ -1050,13 +1092,17 @@ void fragment() {
 	rs->shader_set_code(_shader, shader_code);
 	RID mat_rid = _material->get_rid();
 	rs->material_set_shader(mat_rid, _shader);
-	material_flags = SHADER_PARAM_DEFAULT | SHADER_PARAM_LOD_COLORS;
+	material_flags = SHADER_PARAM_DEFAULT | SHADER_PARAM_LOD_COLORS | SHADER_PARAM_HMAP;
 	Ref<ImageTexture> morph_texture = quad_tree.get_morph_texture();
 	_material->set_shader_parameter("morph_data", morph_texture);
-	Vector2 grid_const = Vector2(0.5 * (real_t)storage->get_chunk_size(), 2.0 / (real_t)storage->get_chunk_size());
-	_material->set_shader_parameter("grid_const", grid_const);
 	_debug_set_lod_colors();
 	_material->set_shader_parameter("debug_lod_colors", debug_lod_colors_tex);
+
+	if (storage_status == OK) {
+		Vector2 grid_const = Vector2(0.5 * (real_t)storage->get_chunk_size(), 2.0 / (real_t)storage->get_chunk_size());
+		_material->set_shader_parameter("grid_const", grid_const);
+		_material->set_shader_parameter("hmap_tex", storage->get_hmap_texture());
+	}
 
 	if (mmesh_instance_data_tex.is_valid()) {
 		_material->set_shader_parameter("instance_data", mmesh_instance_data_tex);

@@ -87,15 +87,16 @@ TEST_CASE("[Modules][Terrainer] Storage") {
 		String file2 = dir_path + vformat(MapStorage::REGION_FILE_FORMAT, 1, 0);
 		String file3 = dir_path + vformat(MapStorage::REGION_FILE_FORMAT, 0, 1);
 		String file4 = dir_path + vformat(MapStorage::REGION_FILE_FORMAT, 1, 1);
-		CHECK(FileAccess::exists(file1));
-		CHECK(FileAccess::exists(file2));
-		CHECK(FileAccess::exists(file3));
-		CHECK(FileAccess::exists(file4));
+		bool  files_exist = FileAccess::exists(file1) && FileAccess::exists(file2) && FileAccess::exists(file3) && FileAccess::exists(file4);
+		CHECK(files_exist);
+		int file_size = storage->get_region_file_size();
+		bool correct_file_sizes = FileAccess::get_size(file1) == file_size && FileAccess::get_size(file2) == file_size && FileAccess::get_size(file3) == file_size && FileAccess::get_size(file4) == file_size;
+		CHECK(correct_file_sizes);
 		const uint8_t *data_ptr = data.ptr();
+		bool equal = true;
 
 		for (size_t irz = 0; irz < 2; ++irz) {
 			for (size_t irx = 0; irx < 2; ++irx) {
-				bool equal = true;
 				Vector2i region = Vector2i(irx, irz);
 
 				for (size_t icz = 0; icz < region_size; ++icz) {
@@ -110,7 +111,7 @@ TEST_CASE("[Modules][Terrainer] Storage") {
 
 								if ((int)data_ptr[ix + w * iz] != *hmap_ptr) {
 									equal = false;
-									goto end_check_chunk;
+									goto end_check_data;
 								}
 
 								hmap_ptr++;
@@ -118,11 +119,11 @@ TEST_CASE("[Modules][Terrainer] Storage") {
 						}
 					}
 				}
-
-				end_check_chunk:
-				CHECK_MESSAGE(equal, vformat("Checking data for region [%d, %d].", irx, irz));
 			}
 		}
+
+		end_check_data:
+		CHECK_MESSAGE(equal, "Checking file data matches origin data.");
 
 		storage->clear();
 		DirAccess::remove_absolute(file1);
