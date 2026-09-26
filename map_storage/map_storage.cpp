@@ -144,11 +144,11 @@ int MapStorage::get_num_regions() const {
     return regions.size();
 }
 
-PackedInt32Array MapStorage::get_chunk_hmap(const Vector2i &p_region, int p_lod, const Vector2i &p_chunk) const {
+PackedInt32Array MapStorage::get_node_hmap(const Vector2i &p_region, int p_lod, const Vector2i &p_chunk) const {
     const Region *const *region_ptr = regions.getptr(p_region);
     ERR_FAIL_NULL_V_EDMSG(region_ptr, PackedInt32Array(), "Region not present in map or not loaded.");
     const Region *region = *region_ptr;
-    return region->get_hmap_chunk_values(p_lod, p_chunk);
+    return region->get_node_hmap_values(p_lod, p_chunk);
 }
 
 // PackedByteArray MapStorage::get_region_hmap_buffer(const Vector2i &p_region) {
@@ -388,13 +388,14 @@ int MapStorage::get_node_texture_layer(const NodeKey &p_key, int p_lod) {
 
         int layer = _next_layer();
         TextureLayerData &layer_data = layers.write[layer];
-        layer_data.heights = sector->get_hmap(p_key.cell, p_lod);
+        sector->get_layer_data(p_key.cell, p_lod, layer_data);
         layer_data.frame = current_frame;
         layer_data.lod = p_lod;
         layer_data.key = p_key;
         layer_data.free = false;
         RenderingDevice *rd = RS::get_singleton()->get_rendering_device();
         rd->texture_update(rd_hmap_texture, layer, layer_data.heights.to_byte_array());
+        rd->texture_update(rd_normal_texture, layer, layer_data.normals);
         map[p_key] = layer;
         return layer;
     }
@@ -402,6 +403,10 @@ int MapStorage::get_node_texture_layer(const NodeKey &p_key, int p_lod) {
 
 Ref<Texture2DArrayRD> MapStorage::get_hmap_texture() const {
     return hmap_texture;
+}
+
+Ref<Texture2DArrayRD> MapStorage::get_normal_texture() const {
+    return normal_texture;
 }
 
 void MapStorage::update_viewer(const Vector3 &p_viewer_pos, const Vector3 &p_viewer_vel, const Vector3 &p_viewer_forward) {
@@ -1023,7 +1028,7 @@ void MapStorage::_allocate_textures(int p_main_layers, bool p_use_extra_buffer) 
     hmap_texture->set_texture_rd_rid(rd_hmap_texture);
     RenderingDevice::TextureFormat normal_format;
     normal_format.array_layers = num_layers;
-    normal_format.format = RenderingDevice::DATA_FORMAT_R8G8B8_UINT;
+    normal_format.format = RenderingDevice::DATA_FORMAT_R8G8B8A8_UNORM;
     normal_format.width = specs.chunk_size + 1;
     normal_format.height = specs.chunk_size + 1;
     normal_format.mipmaps = 1;

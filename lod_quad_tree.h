@@ -28,7 +28,7 @@ namespace Terrainer {
 
 using hmap_t = Region::hmap_t;
 using CellKey = Region::CellKey;
-using NodeKey = MapStorage::NodeKey;
+using NodeKey = Sector::NodeKey;
 
 class LODQuadTree {
 

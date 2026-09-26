@@ -424,7 +424,7 @@ public:
     void clear();
     bool has_region(const Vector2i &p_region) const;
     int get_num_regions() const;
-    PackedInt32Array get_chunk_hmap(const Vector2i &p_region, int p_lod, const Vector2i &p_chunk) const;
+    PackedInt32Array get_node_hmap(const Vector2i &p_region, int p_lod, const Vector2i &p_chunk) const;
     // bool is_sector_loaded(CellKey p_sector) const;
 //     void load_minmax(CellKey p_sector, bool p_in_frustum);
     void get_minmax(const NodeKey &p_key, int p_lod, hmap_t &r_min, hmap_t &r_max);
@@ -434,6 +434,7 @@ public:
 
     int get_node_texture_layer(const NodeKey &p_key, int p_lod);
     Ref<Texture2DArrayRD> get_hmap_texture() const;
+    Ref<Texture2DArrayRD> get_normal_texture() const;
 
     void update_viewer(const Vector3 &p_viewer_pos, const Vector3 &p_viewer_vel, const Vector3 &p_viewer_forward);
     void stop_io();

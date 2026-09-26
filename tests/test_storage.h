@@ -101,7 +101,7 @@ TEST_CASE("[Modules][Terrainer] Storage") {
 
 				for (size_t icz = 0; icz < region_size; ++icz) {
 					for (size_t icx = 0; icx < region_size; ++icx) {
-						PackedInt32Array hmap = storage->get_chunk_hmap(region, 0, Vector2i(icx, icz));
+						PackedInt32Array hmap = storage->get_node_hmap(region, 0, Vector2i(icx, icz));
 						const int *hmap_ptr = hmap.ptr();
 
 						for (size_t j = 0; j < chunk_size; ++j) {

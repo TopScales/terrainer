@@ -21,8 +21,7 @@ class Sector {
 using hmap_t = Region::hmap_t;
 using CellKey = Region::CellKey;
 using RegionSpecs = Region::Specs;
-using ChunkPad = Region::ChunkPad;
-using Size = CowData<uint8_t>::Size;
+using Size = Region::Size;
 
 private:
     using MinMax = Region::MinMax;
@@ -32,6 +31,7 @@ private:
     MinMax *minmax_buffer = nullptr;
     hmap_t *hmap_buffer = nullptr;
     Vector<Region *> regions;
+    float *node_buffer = nullptr;
 
 public:
     struct NodeKey {
@@ -74,7 +74,7 @@ public:
 
     void get_minmax(const CellKey &p_key, int p_lod, hmap_t &r_min, hmap_t &r_max) const;
     // PackedFloat32Array get_hmap(const CellKey &p_key, int p_lod) const;
-    void get_hmap_normal_data(const NodeKey &p_key, int p_lod, TextureLayerData &r_layer_data) const;
+    void get_layer_data(const CellKey &p_key, int p_lod, TextureLayerData &r_layer_data) const;
 
     Sector(const CellKey &p_sector, HashMap<CellKey, Region *> &p_regions, const RegionSpecs &p_specs);
     ~Sector();

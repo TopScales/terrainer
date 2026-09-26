@@ -46,6 +46,7 @@ private:
     static const int SHADER_PARAM_LOD_COLORS = 1 << 3;
     static const int SHADER_PARAM_INSTANCE_DATA = 1 << 4;
     static const int SHADER_PARAM_HMAP = 1 << 5;
+    static const int SHADER_PARAM_NORMAL = 1 << 6;
     static const int SHADER_PARAM_DEFAULT = SHADER_IS_SET | SHADER_PARAM_MORPH_DATA | SHADER_PARAM_GRID_CONST | SHADER_PARAM_INSTANCE_DATA;
 //     static const int SHADER_PARAM_HMAP_ARRAY = 8;
 //     static const int SHADER_PARAM_NORMALS_ARRAY = 16;

@@ -594,6 +594,10 @@ void Terrain::_set_lod_levels() {
 		if (material_flags & SHADER_PARAM_HMAP) {
 			_material->set_shader_parameter("hmap_tex", storage->get_hmap_texture());
 		}
+
+		if (material_flags & SHADER_PARAM_NORMAL) {
+			_material->set_shader_parameter("normal_tex", storage->get_normal_texture());
+		}
 	}
 }
 
@@ -615,6 +619,10 @@ void Terrain::_storage_changed() {
 
 	if (material_flags & SHADER_PARAM_HMAP) {
 		_material->set_shader_parameter("hmap_tex", storage->get_hmap_texture());
+	}
+
+	if (material_flags & SHADER_PARAM_NORMAL) {
+		_material->set_shader_parameter("normal_tex", storage->get_normal_texture());
 	}
 }
 
@@ -761,6 +769,10 @@ void Terrain::_update_material_params() {
 				if (pi.type == Variant::Type::OBJECT && pi.hint_string == "TextureLayered") {
 					material_flags |= SHADER_PARAM_HMAP;
 				}
+			} else if (pi.name == "normal_tex") {
+				if (pi.type == Variant::Type::OBJECT && pi.hint_string == "TextureLayered") {
+					material_flags |= SHADER_PARAM_NORMAL;
+				}
 			}
 		}
 	}
@@ -786,6 +798,10 @@ void Terrain::_update_material_params() {
 
 	if ((material_flags & SHADER_PARAM_HMAP) && !(prev_flags & SHADER_PARAM_HMAP)) {
 		_material->set_shader_parameter("hmap_tex", storage->get_hmap_texture());
+	}
+
+	if ((material_flags & SHADER_PARAM_NORMAL) && !(prev_flags & SHADER_PARAM_NORMAL)) {
+		_material->set_shader_parameter("normal_tex", storage->get_normal_texture());
 	}
 }
 
