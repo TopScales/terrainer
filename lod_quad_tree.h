@@ -24,43 +24,42 @@
 #include <godot_cpp/classes/image_texture.hpp>
 #endif // TERRAINER_GDEXTENSION
 
-#define DEFAULT_MORPH_START_RATIO  (0.66)
-
 namespace Terrainer {
 
-using CellKey = MapStorage::CellKey;
-using NodeKey = MapStorage::NodeKey;
-using hmap_t = MapStorage::hmap_t;
+using hmap_t = Region::hmap_t;
+using CellKey = Region::CellKey;
+using NodeKey = Sector::NodeKey;
 
 class LODQuadTree {
 
     friend class Terrain;
-
 private:
-    static const uint8_t LOD_MASK = 0x0F;
-    static const uint8_t TL_BIT = 1 << 4;
-    static const uint8_t TR_BIT = 1 << 5;
-    static const uint8_t BL_BIT = 1 << 6;
-    static const uint8_t BR_BIT = 1 << 7;
+    static const uint16_t LOD_MASK = 0x000F;
+    static const uint16_t TL_BIT = 1 << 4;
+    static const uint16_t TR_BIT = 1 << 5;
+    static const uint16_t BL_BIT = 1 << 6;
+    static const uint16_t BR_BIT = 1 << 7;
+    static const uint16_t MORPHS_MASK = 0x0F00;
     static constexpr real_t LOD0_RADIUS_FACTOR = 1.2;
     static const int MAX_NODE_SELECTION_COUNT = 4096;
+    static constexpr real_t DEFAULT_MORPH_START_RATIO = 0.66;
 
     enum NodeSelectionResult {
-		Undefined = 0,
-		OutOfFrustum = 1,
-		OutOfRange = 2,
-        OutOfMap = 4,
-        Selected = 8,
-        MaxReached = 16
+		UNDEFINED = 0,
+		OUT_FRUSTUM = 1,
+		OUT_RANGE = 2,
+        OUT_MAP = 4,
+        SELECTED = 8,
+        MAX_REACHED = 16
 	};
 
-    static constexpr int RESULT_DISCARD = OutOfFrustum | OutOfMap;
+    static constexpr int RESULT_DISCARD = OUT_FRUSTUM | OUT_MAP;
 
     enum IntersectType
     {
-        Outside,
-        Intersects,
-        Inside
+        OUTSIDE,
+        INTERSECTS,
+        INSIDE
     };
 
     struct QTNode {
@@ -68,21 +67,24 @@ private:
         uint16_t size = 1;
         uint16_t min_y = 0;
         uint16_t max_y = 0;
-        uint8_t flags = 0;
+        uint16_t flags = 0;
 
         _FORCE_INLINE_ int get_lod_level() const { return flags & LOD_MASK; }
         _FORCE_INLINE_ bool use_tl() const { return flags & TL_BIT; }
         _FORCE_INLINE_ bool use_tr() const { return flags & TL_BIT; }
         _FORCE_INLINE_ bool use_bl() const { return flags & TL_BIT; }
         _FORCE_INLINE_ bool use_br() const { return flags & TL_BIT; }
+        _FORCE_INLINE_ bool use_morph() const { return flags & MORPHS_MASK; }
+
+        static uint16_t get_flags(int p_lod_level, bool p_use_tl, bool p_use_tr, bool p_use_bl, bool p_use_br, bool p_morphs, CellKey p_cell) {
+            const uint16_t quadrant = ((p_cell.x & 0x0001) | ((p_cell.z & 0x0001) << 1)) << 12;
+            return (p_lod_level & LOD_MASK) | (TL_BIT * p_use_tl) | (TR_BIT * p_use_tr) | (BL_BIT * p_use_bl) | (BR_BIT * p_use_br) | (MORPHS_MASK * p_morphs) | quadrant;
+        }
 
         QTNode() : key(CellKey(), CellKey()) {}
 
-        QTNode(NodeKey p_key, uint16_t p_size, uint16_t p_min_y, uint16_t p_max_y, int p_lod_level, \
-            bool p_use_tl, bool p_use_tr, bool p_use_bl, bool p_use_br)
-        : key(p_key), size(p_size), min_y(p_min_y), max_y(p_max_y) {
-            flags = (p_lod_level & LOD_MASK) | (TL_BIT * p_use_tl) | (TR_BIT * p_use_tr) | (BL_BIT * p_use_bl) | (BR_BIT * p_use_br);
-        }
+        QTNode(const NodeKey &p_key, uint16_t p_size, uint16_t p_min_y, uint16_t p_max_y, uint16_t p_flags)
+        : key(p_key), size(p_size), min_y(p_min_y), max_y(p_max_y), flags(p_flags) {}
     };
 
     QTNode selected_buffer[MAX_NODE_SELECTION_COUNT];
@@ -96,9 +98,11 @@ private:
     uint16_t sector_count_x = 1;
     uint16_t sector_count_z = 1;
     real_t lod_distance_ratio = 2.0;
+    real_t morph_start_ratio = DEFAULT_MORPH_START_RATIO;
 
     int lod_levels = 0;
     Vector<real_t> lod_visibility_range;
+    Vector<real_t> morph_start;
     int selection_count = 0;
     Vector<int> lods_count;
     Vector3 world_offset;
@@ -109,21 +113,21 @@ private:
     TypedArray<Plane> frustum;
 #endif
     NodeSelectionResult _lod_select(const Vector3 &p_viewer_position, const Ref<MapStorage> &p_storage, bool p_parent_inside_frustum, const NodeKey &p_key, uint16_t p_size, int p_lod_level, int p_stop_at_lod_level);
-    _FORCE_INLINE_ AABB _get_node_AABB(const NodeKey &p_key, hmap_t min_y, hmap_t max_y, uint16_t p_size) const;
+    _FORCE_INLINE_ AABB _get_node_AABB(const NodeKey &p_key, hmap_t p_min_y, hmap_t p_max_y, uint16_t p_size) const;
     _FORCE_INLINE_ IntersectType _aabb_intersects_frustum(const AABB &p_aabb) const;
 
 public:
     void set_map_info(int p_chunk_size, int p_region_size, const Vector2i p_world_regions, const Vector3 &p_map_scale);
     int set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_radius);
     NodeSelectionResult select_sector_nodes(const Vector3 &p_viewer_position, CellKey p_sector, const Ref<MapStorage> &p_storage, int p_stop_at_lod_level = 0);
-    void update_stats();
+    // void update_stats();
     const QTNode *get_selected_node(int p_index) const;
 //     AABB get_selected_node_aabb(int p_index) const;
 //     int get_selected_node_lod(int p_index) const;
 //     void set_info(TTerrainInfo *p_info) { info = p_info; }
 //     void set_world_info(TWorldInfo *p_info) { world_info = p_info; }
-    int get_lod_nodes_count(int p_level) const;
-//     Ref<ImageTexture> get_morph_texture(real_t p_morph_start_ratio = DEFAULT_MORPH_START_RATIO) const;
+    // int get_lod_nodes_count(int p_level) const;
+    Ref<ImageTexture> get_morph_texture() const;
     Transform3D get_node_transform(const QTNode *p_node) const;
 
     LODQuadTree();

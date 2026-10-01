@@ -6,7 +6,7 @@ Import("env_modules")
 
 env_terrainer = env_modules.Clone()
 
-env_terrainer.Append(CPPDEFINES=["TERRAINER_MODULE"])
+env_terrainer.Append(CPPDEFINES=["TERRAINER_MODULE", "TERRAINER_DEBUG"])
 
 env_terrainer.add_source_files(env.modules_sources, "*.cpp")
 env_terrainer.add_source_files(env.modules_sources, "map_storage/*.cpp")

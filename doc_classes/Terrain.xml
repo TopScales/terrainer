@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="Terrain" inherits="Node3D" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Displays a heightmap terrain mesh using multiple levels of details (LODs).
+	</brief_description>
+	<description>
+		The terrain is displayed using a single multi-mesh using the CDLOD technique that relies on the GPU to render the shape of the terrain and process the seams between different LODs.
+	</description>
+	<tutorials>
+	</tutorials>
+	<members>
+		<member name="map_scale" type="Vector3" setter="set_map_scale" getter="get_map_scale" default="Vector3(1, 1, 1)">
+			Scale of the map in the different directions.
+		</member>
+		<member name="storage" type="MapStorage" setter="set_storage" getter="get_storage">
+			The map storage resource that will stream the terrain data.
+		</member>
+	</members>
+</class>

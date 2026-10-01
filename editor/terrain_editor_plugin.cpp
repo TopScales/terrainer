@@ -11,6 +11,9 @@
 
 #include "terrain_editor_plugin.h"
 
+#include "core/object/callable_mp.h"
+#include "scene/main/scene_tree.h"
+
 #ifdef TERRAINER_GDEXTENSION
 #include <godot_cpp/classes/scene_tree.hpp>
 #endif // TERRAINER_GDEXTENSION

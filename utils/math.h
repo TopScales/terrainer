@@ -83,11 +83,26 @@ static real_t aabb_min_distance_sqrd_from_point(const AABB &p_aabb, const Vector
 	return distance_sqrd;
 }
 
+static real_t aabb_max_distance_sqrd_from_point(const AABB &p_aabb, const Vector3 &p_point) {
+	Vector3 end = p_aabb.get_end();
+    real_t k = MAX(Math::abs(p_point.x - p_aabb.position.x), Math::abs(p_point.x - end.x));
+	real_t dist2 = k * k;
+	k = MAX(Math::abs(p_point.y - p_aabb.position.y), Math::abs(p_point.y - end.y));
+	dist2 += k * k;
+	k = MAX(Math::abs(p_point.z - p_aabb.position.z), Math::abs(p_point.z - end.z));
+	dist2 += k * k;
+	return dist2;
+}
+
 inline bool aabb_intersects_sphere(const AABB &p_aabb, const Vector3 &p_center, real_t p_radius) {
 	return aabb_min_distance_sqrd_from_point(p_aabb, p_center) <= p_radius * p_radius;
 }
 
-inline int lod_expand(int p_size, int p_lods) {
+inline int lod_geom_expand(int p_size, int p_lods) {
+	return 2 * int(p_size * (1.0 - 1.0 / float(1 << p_lods)));
+}
+
+inline int lod_geom_expand_sqr(int p_size, int p_lods) {
 	return int(4.0 * p_size * (1.0 - 1.0 / float(1 << (2 * p_lods))) / 3.0);
 }
 

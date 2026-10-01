@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<class name="MapStorage" inherits="Resource" api_type="core" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="../../../doc/class.xsd">
+	<brief_description>
+		Gives access to terrain data.
+	</brief_description>
+	<description>
+		This resource is needed to save and load terrain data and other map information. It works by streaming data from hard drive to RAM and VRAM memories.
+	</description>
+	<tutorials>
+	</tutorials>
+	<methods>
+		<method name="is_data_locked" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] if map data has been locked. Locking the data allows for some I/O and storage optimizations.
+			</description>
+		</method>
+		<method name="is_size_locked" qualifiers="const">
+			<return type="bool" />
+			<description>
+				Returns [code]true[/code] if the size of the map has been locked. Since changing the map size invalidates all data, once some parts of the map has been edited, the size should be locked to prevent from erase all data by mistake.
+			</description>
+		</method>
+		<method name="set_data_locked">
+			<return type="void" />
+			<param index="0" name="locked" type="bool" />
+			<description>
+				Locks the map data allowing some I/O and storage optimizations.
+			</description>
+		</method>
+		<method name="set_size_locked">
+			<return type="void" />
+			<param index="0" name="locked" type="bool" />
+			<description>
+				Locks the size of the map to prevent from invalidating the data by mistake.
+			</description>
+		</method>
+	</methods>
+	<members>
+		<member name="chunk_size" type="int" setter="set_chunk_size" getter="get_chunk_size" default="32">
+			Size of the map chunk in terms of cells. This establishes tbe size of the chunk in both [code]x[/code] and [code]z[/code] directions. Must be a power of 2.
+		</member>
+		<member name="directory_path" type="String" setter="set_directory_path" getter="get_directory_path" default="&quot;&quot;">
+			Points to the directory where map data is stored. The data is not stored directly in the MapStorage, but in separate files containing the information by map regions.
+		</member>
+		<member name="region_size" type="int" setter="set_region_size" getter="get_region_size" default="32">
+			Number of chunks (per side) that each map file contains. Must be a power of 2.
+		</member>
+	</members>
+	<constants>
+		<constant name="MAX_CHUNK_SIZE" value="2048">
+			Maximum allowed size for chunks.
+		</constant>
+		<constant name="MAX_LOD_LEVELS" value="15">
+			Maximum allowed number of LOD levels.
+		</constant>
+	</constants>
+</class>

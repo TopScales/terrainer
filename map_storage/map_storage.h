@@ -12,14 +12,19 @@
 #ifndef TERRAINER_MAP_STORAGE_H
 #define TERRAINER_MAP_STORAGE_H
 
-#include "buffer_pool.h"
+#include "core/config/engine.h"
 #include "core/io/dir_access.h"
-#include "core/io/file_access.h"
 #include "core/io/resource.h"
-#include "core/os/thread.h"
-#include "queue.h"
+#include "sector.h"
+
+// #include "aligned_buffer.h"
+// #include "buffer_pool.h"
+// #include "core/io/file_access.h"
+// #include "core/os/thread.h"
+// #include "lod_buffer.h"
+// #include "queue.h"
 #include "scene/resources/texture_rd.h"
-#include "servers/rendering/rendering_server.h"
+// #include "vector_buffer_pool.h"
 
 // #include "core/object/worker_thread_pool.h"
 // #include "core/os/mutex.h"
@@ -29,9 +34,14 @@
 // #include "servers/rendering/rendering_server.h"
 // #include "../terrain_info.h"
 
-using namespace rigtorp;
+// using namespace rigtorp;
 
 namespace Terrainer {
+
+using hmap_t = Region::hmap_t;
+using CellKey = Region::CellKey;
+using TextureLayerData = Sector::TextureLayerData;
+using NodeKey = Sector::NodeKey;
 
 class MapStorage : public Resource {
     GDCLASS(MapStorage, Resource);
@@ -39,105 +49,39 @@ class MapStorage : public Resource {
     friend class Terrain;
 
 public:
-    typedef uint16_t hmap_t;
+    // enum BufferType {
+    //     BUFFER_MINMAX,
+    //     BUFFER_HMAP
+    // };
 
-    union CellKey {
-        struct {
-            uint16_t x;
-            uint16_t z;
-        } cell;
-        uint32_t key;
-
-        constexpr CellKey() : key(0) {}
-        constexpr CellKey(uint16_t p_x, uint16_t p_z) : cell({p_x, p_z}) {}
-
-        constexpr CellKey operator+(CellKey p_k) const { return CellKey(cell.x + p_k.cell.x, cell.z + p_k.cell.z); }
-        constexpr void operator+=(CellKey p_k) { cell.x += p_k.cell.x; cell.z += p_k.cell.z; }
-        constexpr CellKey operator-(CellKey p_k) const { return CellKey(cell.x - p_k.cell.x, cell.z - p_k.cell.z); }
-        constexpr void operator-=(CellKey p_k) { cell.x -= p_k.cell.x; cell.z -= p_k.cell.z; }
-        constexpr bool operator==(CellKey p_k) const { return key == p_k.key; }
-        constexpr bool operator!=(CellKey p_k) const { return key != p_k.key; }
-
-        _FORCE_INLINE_ Vector3 position(real_t p_scale_x, real_t p_scale_z) const {
-            return Vector3(cell.x * p_scale_x, 0.0, cell.z * p_scale_z);
-        }
-
-        uint32_t hash() const {
-            return hash_murmur3_one_32(key);
-	    }
-    };
-    static_assert(sizeof(CellKey) == 4);
-
-    struct NodeKey {
-        CellKey sector;
-        CellKey cell;
-
-        constexpr NodeKey() {}
-        constexpr NodeKey(CellKey p_sector, CellKey p_cell) : sector(p_sector), cell(p_cell) {}
-        constexpr bool operator==(const NodeKey &p_k) const { return sector == p_k.sector && cell == p_k.cell; }
-
-        _FORCE_INLINE_ Vector3 sector_position(real_t p_scale_x, real_t p_scale_z) const {
-            return sector.position(p_scale_x, p_scale_z);
-        }
-        _FORCE_INLINE_ Vector3 position(int p_sector_size, int p_lod, int p_num_lods, real_t p_scale_x, real_t p_scale_z) const {
-            int lod_shift = p_num_lods - p_lod - 1;
-            int cell_size = p_sector_size >> lod_shift;
-            return Vector3((sector.cell.x * p_sector_size + cell.cell.x * cell_size) * p_scale_x, 0.0, (sector.cell.z * p_sector_size + cell.cell.z * cell_size) * p_scale_x);
-        }
-
-        uint32_t hash() const {
-            uint32_t h = hash_murmur3_one_32(uint32_t(sector.key));
-            h = hash_murmur3_one_32(uint32_t(cell.key), h);
-            return hash_fmix32(h);
-        }
-    };
-    static_assert(sizeof(NodeKey) == 8);
-
-    enum BufferType {
-        BUFFER_MINMAX,
-        BUFFER_HMAP
-    };
-
-    enum BufferStat {
-        STAT_ALLOCATED_COUNT,
-        STAT_FREE_COUNT,
-        STAT_PEAK_ALLOCATED,
-        STAT_TOTAL_ALLOCATIONS,
-        STAT_TOTAL_DEALLOCATIONS,
-        STAT_UTILIZATION,
-        STAT_AVAILABLE_BLOCKS,
-        STAT_AVAILABLE_BYTES,
-        STAT_BLOCK_SIZE,
-        STAT_BLOCK_COUNT
-    };
+    // enum BufferStat {
+    //     STAT_ALLOCATED_COUNT,
+    //     STAT_FREE_COUNT,
+    //     STAT_PEAK_ALLOCATED,
+    //     STAT_TOTAL_ALLOCATIONS,
+    //     STAT_TOTAL_DEALLOCATIONS,
+    //     STAT_UTILIZATION,
+    //     STAT_AVAILABLE_BLOCKS,
+    //     STAT_AVAILABLE_BYTES,
+    //     STAT_BLOCK_SIZE,
+    //     STAT_BLOCK_COUNT
+    // };
 
 private:
-    static constexpr float CLEANUP_BUFFER_UTILIZATION = 0.8f;
-    static constexpr float BUFFER_EXTRA_ALLOCATION_FACTOR = 1.25f;
+    static constexpr float BUFFER_EXTRA_ALLOCATION_FACTOR = 1.75f;
+    static constexpr float CLEANUP_BUFFER_UTILIZATION = 0.85f;
+    static const int CLEANUP_FRAME_TOLERANCE = 200;
 
-    static constexpr uint16_t HMAP_HOLE_VALUE = UINT16_MAX;
-    static constexpr uint16_t HMAP_MAX = HMAP_HOLE_VALUE - 1;
+    // static const uint8_t FORMAT_LITTLE_ENDIAN = 0x11;
+    // static const uint8_t FORMAT_BIG_ENDIAN = 0x22;
 
-    static const String REGION_FILE_BASE_NAME;
-    static const String REGION_FILE_EXTENSION;
-    static const String REGION_FILE_FORMAT;
+    // static const uint8_t FORMAT_PACKED = 0x01;
+    // static const uint8_t FORMAT_SPARSE = 0x10;
+    // static const uint8_t FORMAT_PACKAGING_MASK = 0x03;
 
-    static const size_t HEADER_SIZE = 32;
-    static const size_t MINMAX_OFFSET = HEADER_SIZE;
-    static const size_t FILE_HEADER_SIZE = 64;
-    static const size_t MAGIC_SIZE = 4;
-    static constexpr char unsigned MAGIC_STRING[MAGIC_SIZE] = {'T', 'E', 'R', 'R'};
-    static const uint8_t FORMAT_VERSION = 1ui8;
-
-    static const uint8_t FORMAT_PACKED = 0x00;
-    static const uint8_t FORMAT_SPARSE = 0x10;
-    static const uint8_t FORMAT_PACKAGING_MASK = 0x10;
-    static const uint8_t FORMAT_SAVED_LODS_MASK = 0x0F;
-
-    static const uint8_t FORMAT_LITTLE_ENDIAN = 0x11;
-    static const uint8_t FORMAT_BIG_ENDIAN = 0x22;
-
-    static constexpr uint8_t REGION_FLAG_HAS_MINMAX = 1 << 0;
+    // static constexpr uint8_t REGION_FLAG_HAS_MINMAX = 1 << 0;
+    // static constexpr uint8_t REGION_FLAG_HAS_HMAP = 1 << 1;
+    // static constexpr uint8_t REGION_FLAG_HAS_SPLAT = 1 << 2;
 
     // static constexpr uint32_t CHUNK_FLAG_HAS_MINMAX = 1 << 0;
     // static constexpr uint32_t CHUNK_FLAG_HAS_HEIGHT = 1 << 1;
@@ -148,26 +92,22 @@ private:
     // static constexpr uint32_t CHUNK_FLAG_COMPRESSED_SPLAT = 1 << 6;
     // static constexpr uint32_t CHUNK_FLAG_COMPRESSED_META = 1 << 7;
 
-    static const int MAX_QUEUE_SIZE = 32;
-    static const int MAX_RES_QUEUE_SIZE = 128;
+    // static const int MAX_QUEUE_SIZE = 32;
+    // static const int MAX_RES_QUEUE_SIZE = 128;
     // static const int MAX_POOL_SIZE = 32;
 
-    static constexpr uint32_t DATA_TYPE_MINMAX = 1 << 0;
-    static constexpr uint32_t DATA_TYPE_HEIGHT = 1 << 1;
-    static constexpr uint32_t DATA_TYPE_SPLAT = 1 << 2;
-    static constexpr uint32_t DATA_TYPE_META = 1 << 3;
+    // static constexpr uint32_t DATA_TYPE_MINMAX = 1 << 0;
+    // static constexpr uint32_t DATA_TYPE_HEIGHT = 1 << 1;
+    // static constexpr uint32_t DATA_TYPE_SPLAT = 1 << 2;
+    // static constexpr uint32_t DATA_TYPE_META = 1 << 3;
 
-    static const int MAX_CHUNK_SIZE = 2048;
-    static const int MAX_PROCESSED_RESULTS = 10;
+    // static const int MAX_PROCESSED_RESULTS = 10;
 
-    static constexpr float PRIORITY_DISTANCE_FACTOR = 100.0f;
-    static constexpr float PRIORITY_DISTANCE_HALF_DECAY = 20.0f;
-    static constexpr float PRIORITY_IN_FRUSTUM = 2.0f;
-    static constexpr float PRIORITY_MINMAX = 10.0f;
-    static constexpr real_t PRIORITY_PREDICTION_DELTA_TIME = 2.0;
-
-    static const int INVALID_TEXTURE_LAYER = -1;
-    static const int EXTRA_BUFFER_LAYERS = 8;
+    // static constexpr float PRIORITY_DISTANCE_FACTOR = 100.0f;
+    // static constexpr float PRIORITY_DISTANCE_HALF_DECAY = 20.0f;
+    // static constexpr float PRIORITY_IN_FRUSTUM = 2.0f;
+    // static constexpr float PRIORITY_MINMAX = 10.0f;
+    static constexpr real_t PRIORITY_PREDICTION_DELTA_TIME = 2.0; // To predict the position of viewer in this amount of seconds.
 
     // enum class ChunkState : uint8_t {
     //     Unloaded,
@@ -212,43 +152,47 @@ private:
     // };
     // static_assert(sizeof(Header) == HEADER_SIZE);
 
-    struct alignas(HEADER_SIZE) Header {
-        uint8_t presence;
-        uint8_t version;
-        uint8_t minmax_height_format;
-        uint8_t splat_meta_format;
-        uint8_t minmax_dir_size;
-        uint8_t height_dir_size;
-        uint8_t splat_dir_size;
-        uint8_t meta_dir_size;
-        uint64_t height_offset;
-        uint64_t splat_offset;
-        uint64_t meta_offset;
+    // struct alignas(SUBHEADER_SIZE) Subheader {
+    //     uint8_t presence;
+    //     uint8_t version;
+    //     uint8_t minmax_height_format;
+    //     uint8_t splat_meta_format;
+    //     uint8_t minmax_dir_size;
+    //     uint8_t hmap_dir_size;
+    //     uint8_t splat_dir_size;
+    //     uint8_t meta_dir_size;
+    //     uint64_t hmap_offset;
+    //     uint64_t splat_offset;
+    //     uint64_t meta_offset;
 
-        _FORCE_INLINE_ bool has_minmax() const { return presence & REGION_FLAG_HAS_MINMAX; };
-    };
-    static_assert(sizeof(Header) == HEADER_SIZE);
+    //     _FORCE_INLINE_ bool has_minmax() const { return presence & REGION_FLAG_HAS_MINMAX; }
+    //     _FORCE_INLINE_ bool has_hmap() const { return presence & REGION_FLAG_HAS_HMAP; }
+    //     _FORCE_INLINE_ bool has_splat() const { return presence & REGION_FLAG_HAS_SPLAT; }
+    // };
+    // static_assert(sizeof(Subheader) == SUBHEADER_SIZE);
 
-    struct alignas(FILE_HEADER_SIZE) FileHeader {
-        char magic[MAGIC_SIZE];
-        uint8_t endianness;
-        uint8_t format;
-        uint8_t u8_reserved1;
-        uint8_t u8_reserved2;
-        uint32_t chunk_size;
-        uint32_t region_size;
-        uint64_t u64_reserved1;
-        uint64_t u64_reserved2;
-        Header header;
+    // struct alignas(FILE_HEADER_SIZE) FileHeader {
+    //     char magic[MAGIC_SIZE];
+    //     uint8_t endianness;
+    //     uint8_t format;
+    //     uint8_t minmax_lods: 4;
+    //     uint8_t hmap_lods: 4;
+    //     uint8_t u8_reserved2;
+    //     uint32_t chunk_size;
+    //     uint32_t region_size;
+    //     uint64_t u64_reserved1;
+    //     uint64_t u64_reserved2;
+    //     Subheader subheader;
 
-        _FORCE_INLINE_ int lods() { return format & FORMAT_SAVED_LODS_MASK; }
-    };
-    static_assert(sizeof(FileHeader) == FILE_HEADER_SIZE);
+    //     _FORCE_INLINE_ bool is_packed() { return (format & FORMAT_PACKAGING_MASK) == FORMAT_PACKED; }
+    //     _FORCE_INLINE_ bool is_sparse() { return (format & FORMAT_PACKAGING_MASK) == FORMAT_SPARSE; }
+    // };
+    // static_assert(sizeof(FileHeader) == FILE_HEADER_SIZE);
 
-    union alignas(FILE_HEADER_SIZE) FileHeaderBytes {
-        uint8_t bytes[FILE_HEADER_SIZE];
-        FileHeader value;
-    };
+    // union alignas(FILE_HEADER_SIZE) FileHeaderBytes {
+    //     uint8_t bytes[FILE_HEADER_SIZE];
+    //     FileHeader value;
+    // };
 
     // struct ChunkEntry {
     //     uint32_t flags;
@@ -267,171 +211,239 @@ private:
     //     Writing,
     // };
 
-    struct Region {
-        Header *header;
-        Ref<FileAccess> query_access;
-        Ref<FileAccess> data_access;
-    };
+    // struct MinMax {
+    //     hmap_t min;
+    //     hmap_t max;
+    // };
+    // static_assert(sizeof(MinMax) == 2 * sizeof(hmap_t));
 
-    struct Tracker {
-        void *pointer;
-        mutable uint64_t frame;
-        mutable bool in_frustum;
 
-        enum class Status : uint8_t {
-            UNINITIALIZED,
-            LOADING,
-            LOADED
-        } status;
+    // struct Region {
+    //     Subheader *header = nullptr;
+    //     Ref<FileAccess> query_access;
+    //     Ref<FileAccess> data_access;
+    //     LODBuffer<MinMax> *minmax = nullptr;
+    //     LODBuffer<hmap_t> *hmap = nullptr;
 
-        Tracker() : frame(0), pointer(nullptr), status(Status::UNINITIALIZED), in_frustum(false) {}
-        Tracker(uint64_t p_frame, Status p_status, bool p_in_frustum) : frame(p_frame), pointer(nullptr), status(p_status), in_frustum(p_in_frustum) {}
-        _FORCE_INLINE_ bool is_loaded() const { return status == Status::LOADED; }
-        _FORCE_INLINE_ bool exists() const { return status != Status::UNINITIALIZED; }
+    //     bool is_minmax_loaded() const {
+    //         return status.minmax == LOADED;
+    //     }
+    //     bool is_hmap_loaded() const {
+    //         return status.hmap == LOADED;
+    //     }
+    //     bool is_minmax_awaiting() const {
+    //         return status.minmax != LOADED && status.minmax != UNLOADED;
+    //     }
+    //     bool is_hmap_awaiting() const {
+    //         return status.hmap != LOADED && status.hmap != UNLOADED;
+    //     }
+    //     void set_minmax_loaded(bool p_loaded) {
+    //         StatusEnum new_status = p_loaded ? LOADED : UNLOADED;
+    //         status.minmax = new_status;
+    //     }
+    //     void set_hmap_loaded(bool p_loaded) {
+    //         StatusEnum new_status = p_loaded ? LOADED : UNLOADED;
+    //         status.hmap = new_status;
+    //     }
 
-    };
+    // private:
+    //     enum StatusEnum : uint8_t {
+    //         UNLOADED,
+    //         LOADED,
+    //         LOADING,
+    //         LOAD_REQUESTED,
+    //         SAVE_REQUESTED
+    //     };
 
-    const Tracker default_tracker;
+    //     struct Status {
+    //         StatusEnum minmax;
+    //         StatusEnum hmap;
+    //         StatusEnum splat;
+    //         StatusEnum meta;
+    //     } status;
+    // };
 
-    struct IORequest {
-        NodeKey key;
-        Tracker* tracker;
-        uint64_t request_id;
-        float priority;
-        uint16_t data_type;
-        uint16_t lod_level;
+//     struct Tracker {
+//         void *pointer;
+//         mutable uint64_t frame;
+//         mutable bool in_frustum;
 
-        IORequest() : tracker(nullptr), request_id(0), priority(0.0f), data_type(0), lod_level(0) {}
-        IORequest(NodeKey p_key, Tracker *p_tracker, uint64_t p_request_id, uint16_t p_type, uint16_t p_lod) :
-            key(p_key), tracker(p_tracker), request_id(p_request_id), priority(0.0f), data_type(p_type), lod_level(p_lod) {}
-    };
-    static_assert(sizeof(IORequest) == 32);
+//         enum class Status : uint8_t {
+//             UNINITIALIZED,
+//             LOADING,
+//             LOADED
+//         } status;
 
-    struct RequestCompare {
-		_FORCE_INLINE_ bool operator()(const IORequest &p_a, const IORequest &p_b) const {
-			return p_a.priority < p_b.priority;
-		}
-	};
+//         Tracker() : frame(0), pointer(nullptr), status(Status::UNINITIALIZED), in_frustum(false) {}
+//         Tracker(uint64_t p_frame, Status p_status, bool p_in_frustum) : frame(p_frame), pointer(nullptr), status(p_status), in_frustum(p_in_frustum) {}
+//         _FORCE_INLINE_ bool is_loaded() const { return status == Status::LOADED; }
+//         _FORCE_INLINE_ bool exists() const { return status != Status::UNINITIALIZED; }
 
-    struct IOResult {
-        NodeKey key;
-        uint64_t request_id;
-        uint16_t data_type;
-        uint16_t lod_level;
-        void *pointer;
+//     };
 
-        enum class Status : uint8_t {
-            UNKOWN,
-            SUCCESS,
-            IO_ERROR,            // Disk read failed
-            DECOMPRESSION_ERROR, // Corrupt data
-            CANCELLED,           // Request was cancelled mid-flight
-            OUT_OF_MEMORY        // Pool allocation failed
-        } status;
+//     const Tracker default_tracker;
 
-        // Performance tracking.
-        uint64_t io_start_time;
-        uint64_t io_end_time;
-        uint32_t bytes_read_from_disk;  // Compressed size read
+//     struct IORequest {
+//         NodeKey key;
+//         Tracker* tracker;
+//         uint64_t request_id;
+//         float priority;
+//         uint16_t data_type;
+//         uint16_t lod_level;
 
-        IOResult(const NodeKey &p_key, uint64_t p_request_id, uint16_t p_data_type, uint16_t p_lod):
-            key(p_key), request_id(p_request_id), data_type(p_data_type), lod_level(p_lod), pointer(nullptr), status(Status::UNKOWN) {}
+//         IORequest() : tracker(nullptr), request_id(0), priority(0.0f), data_type(0), lod_level(0) {}
+//         IORequest(NodeKey p_key, Tracker *p_tracker, uint64_t p_request_id, uint16_t p_type, uint16_t p_lod) :
+//             key(p_key), tracker(p_tracker), request_id(p_request_id), priority(0.0f), data_type(p_type), lod_level(p_lod) {}
+//     };
+//     static_assert(sizeof(IORequest) == 32);
 
-        _FORCE_INLINE_ bool is_success() const { return status == Status::SUCCESS; }
-        _FORCE_INLINE_ uint64_t latency() const { return io_end_time - io_start_time; }
-    };
+//     struct RequestCompare {
+// 		_FORCE_INLINE_ bool operator()(const IORequest &p_a, const IORequest &p_b) const {
+// 			return p_a.priority < p_b.priority;
+// 		}
+// 	};
 
-    struct TextureData {
-        PackedByteArray height;
-        PackedByteArray splat;
-        int layer = INVALID_TEXTURE_LAYER;
-    };
+//     struct IOResult {
+//         NodeKey key;
+//         uint64_t request_id;
+//         uint16_t data_type;
+//         uint16_t lod_level;
+//         void *pointer;
+
+//         enum class Status : uint8_t {
+//             UNKOWN,
+//             SUCCESS,
+//             IO_ERROR,            // Disk read failed
+//             DECOMPRESSION_ERROR, // Corrupt data
+//             CANCELLED,           // Request was cancelled mid-flight
+//             OUT_OF_MEMORY        // Pool allocation failed
+//         } status;
+
+//         // Performance tracking.
+//         uint64_t io_start_time;
+//         uint64_t io_end_time;
+//         uint32_t bytes_read_from_disk;  // Compressed size read
+
+//         IOResult(const NodeKey &p_key, uint64_t p_request_id, uint16_t p_data_type, uint16_t p_lod):
+//             key(p_key), request_id(p_request_id), data_type(p_data_type), lod_level(p_lod), pointer(nullptr), status(Status::UNKOWN) {}
+
+//         _FORCE_INLINE_ bool is_success() const { return status == Status::SUCCESS; }
+//         _FORCE_INLINE_ uint64_t latency() const { return io_end_time - io_start_time; }
+//     };
 
     String directory_path;
-    uint16_t chunk_size = 32ui16;
-    uint16_t region_size = 32ui16;
     bool size_locked = false;
     bool data_locked = false;
 
-    uint16_t sector_size = 0ui16; // In terms of chunks.
-    int lods = 0;
-    int saved_lods = 5; // log2(32)
+    Region::Specs specs;
+    // LODBufferSpecs minmax_specs;
+    // LODBufferSpecs hmap_specs;
 
-    Thread io_thread;
-    SafeFlag io_running;
+//     Thread io_thread;
+//     SafeFlag io_running;
 
-    Vector<IORequest> io_pending;
-    SPSCQueue<IORequest> *io_queue = nullptr;
-    SPSCQueue<IOResult> *io_result = nullptr;
+//     Vector<IORequest> io_pending;
+//     SPSCQueue<IORequest> *io_queue = nullptr;
+//     SPSCQueue<IOResult> *io_result = nullptr;
     uint64_t current_frame = 0;
-    uint64_t cancelled_frame = 0;
-    uint64_t current_request = 0;
+//     uint64_t cancelled_frame = 0;
+//     uint64_t current_request = 0;
     Vector3 viewer_pos;
     Vector3 viewer_vel;
     Vector3 viewer_forward;
     Vector3 predicted_viewer_pos;
-    Vector3 map_scale;
+    // Vector3 map_scale;
 
-    HashMap<CellKey, Region*> regions;
-    Vector<size_t> minmax_lod_offsets;
-    BufferPool<hmap_t> *minmax_buffer = nullptr;
-    HashMap<CellKey, Tracker> minmax_trackers;
-    Vector<hmap_t> minmax_read;
-    const mutable Tracker* cached_minmax_tracker = nullptr;
-    mutable CellKey cached_sector = CellKey(UINT16_MAX, UINT16_MAX);
+    HashMap<CellKey, Region *> regions;
+    HashMap<CellKey, Sector *> sectors;
+    Vector<TextureLayerData> layers;
+//     Vector<size_t> minmax_lod_offsets;
+//     BufferPool<hmap_t> *minmax_buffer = nullptr;
+//     HashMap<CellKey, Tracker> minmax_trackers;
+//     Vector<hmap_t> minmax_read;
+//     const mutable Tracker* cached_minmax_tracker = nullptr;
+//     mutable CellKey cached_sector = CellKey(UINT16_MAX, UINT16_MAX);
     real_t camera_far = 0.0;
-    hmap_t default_height = 0;
 
-    BufferPool<hmap_t> *hmap_buffer = nullptr;
-    Vector<HashMap<NodeKey, Tracker>> textures_trackers;
-    Vector<int> unused_texture_layers;
+//     AlignedBuffer<hmap_t> *hmap_load = nullptr;
+//     VectorBufferPool<hmap_t> *hmap_buffer = nullptr;
+//     Vector<size_t> hmap_lod_offset;
+    Vector<HashMap<NodeKey, int>> texture_layers;
     int num_layers = 0;
     int used_layers = 0;
-    int requested_layers = 0;
-    RID rd_heightmap_texture;
-    Ref<Texture2DArrayRD> heightmap_texture;
+    Vector<int> unused_texture_layers;
+    RID rd_hmap_texture;
+    RID rd_normal_texture;
+    Ref<Texture2DArrayRD> hmap_texture;
+    Ref<Texture2DArrayRD> normal_texture;
+//     real_t hmap_buffer_size_factor = 0.5;
 
-    void _clear();
-    static void _process_requests(void *p_storage);
-    _FORCE_INLINE_ void _add_request(const NodeKey &p_key, Tracker *p_tracker, uint16_t p_data_type, uint16_t p_lod);
-    void _submit_requests();
-    void _process_results();
-    _FORCE_INLINE_ void _load_region_minmax(CellKey p_region_key, hmap_t *p_buffer, size_t p_size);
-    void _load_sector_minmax(const NodeKey &p_key, const IORequest &p_request);
-    Region* _create_region(CellKey p_region_key);
-    float _calc_request_priority(const Vector3 &p_chunk_pos, bool p_in_frustum);
-    _FORCE_INLINE_ bool _is_format_correct(Ref<FileAccess> &p_file) const;
+    // _FORCE_INLINE_ bool _is_format_correct(Ref<FileAccess> &p_file) const;
+//     static void _process_requests(void *p_storage);
+//     _FORCE_INLINE_ void _add_request(const NodeKey &p_key, Tracker *p_tracker, uint16_t p_data_type, uint16_t p_lod);
+//     void _submit_requests();
+//     void _process_results();
+//     void _load_region_minmax(CellKey p_region_key, hmap_t *p_buffer, size_t p_size);
+//     void _load_sector_minmax(const NodeKey &p_key, const IORequest &p_request);
+    // Region* _create_region(CellKey p_region_key);
+//     float _calc_request_priority(const Vector3 &p_chunk_pos, bool p_in_frustum);
+//     NodeKey _sector_to_region(const NodeKey &p_key, int p_lod) const;
 
-    void _clean_minmax();
-    void _cache_minmax(CellKey p_sector) const;
+//     void _clean_minmax();
+//     void _cache_minmax(CellKey p_sector) const;
 
-    void _allocate_textures();
+    void _allocate_textures(int p_main_layers, bool p_use_extra_buffer = true);
     int _next_layer();
-    // void _clean_hmap();
+    void _clean_layers();
+//     void _load_hmap(const NodeKey &p_region_key, const NodeKey &p_sector_key, int p_lod, const IORequest &p_request);
+//     // void _clean_hmap();
+    void _clear_sectors();
 
 protected:
-    bool _set(const StringName &p_name, const Variant &p_value);
-	bool _get(const StringName &p_name, Variant &r_ret) const;
-    void _get_property_list(List<PropertyInfo> *p_list) const;
+//     bool _set(const StringName &p_name, const Variant &p_value);
+// 	bool _get(const StringName &p_name, Variant &r_ret) const;
+//     void _get_property_list(List<PropertyInfo> *p_list) const;
+    void _validate_property(PropertyInfo &p_property) const;
     static void _bind_methods();
 
 public:
+    static const int MAX_CHUNK_SIZE = 2048;
     static const int MAX_LOD_LEVELS = 15;
+    static_assert(Region::MAX_LOD_LEVELS == MAX_LOD_LEVELS);
     static const StringName path_changed;
 
-    Error load_headers();
-    bool is_sector_loaded(CellKey p_sector) const;
-    void load_minmax(CellKey p_sector, bool p_in_frustum);
-    void get_minmax(const NodeKey &p_key, int p_lod, hmap_t &r_min, hmap_t &r_max, bool &r_has_data) const;
-    void allocate_buffers(int p_sector_chunks, int p_num_nodes, int p_lods, const Vector3 &p_map_scale, real_t p_far_view);
+    static const String REGION_FILE_BASE_NAME;
+    static const String REGION_FILE_EXTENSION;
+    static const String REGION_FILE_FORMAT;
 
-    int get_node_texture_layer(const NodeKey &p_key, int p_lod);
+    static constexpr uint16_t HMAP_HOLE_VALUE = UINT16_MAX;
+    static constexpr uint16_t HMAP_MAX = HMAP_HOLE_VALUE - 1;
+
+    void store_heightmap_data(const PackedByteArray &p_data, const Vector2i &p_size);
+    Error load_headers();
+    void clear();
+    bool has_region(const Vector2i &p_region) const;
+    int get_num_regions() const;
+    PackedInt32Array get_node_hmap(const Vector2i &p_region, int p_lod, const Vector2i &p_chunk) const;
+    // bool is_sector_loaded(CellKey p_sector) const;
+//     void load_minmax(CellKey p_sector, bool p_in_frustum);
+    void get_minmax(const NodeKey &p_key, int p_lod, hmap_t &r_min, hmap_t &r_max);
+    // void get_minmax(const NodeKey &p_key, int p_lod, hmap_t &r_min, hmap_t &r_max, bool &r_has_data) const;
+    void allocate_buffers(int p_sector_chunks, int p_num_nodes, int p_lods, const Vector3 &p_map_scale, real_t p_far_view);
+    void allocate_textures(int p_layers);
+
+    int get_node_texture_layer(const NodeKey &p_key, int p_lod, int p_node_size);
+    Ref<Texture2DArrayRD> get_hmap_texture() const;
+    Ref<Texture2DArrayRD> get_normal_texture() const;
 
     void update_viewer(const Vector3 &p_viewer_pos, const Vector3 &p_viewer_vel, const Vector3 &p_viewer_forward);
     void stop_io();
     void process();
+    void prepare();
 
-    int get_buffer_stat(BufferType p_buffer, BufferStat p_stat) const;
+    int get_region_file_size();
+
+//     int get_buffer_stat(BufferType p_buffer, BufferStat p_stat) const;
 
     bool is_directory_set() const;
     void set_directory_path(const String &p_path);
@@ -446,14 +458,14 @@ public:
     bool is_data_locked() const;
     void set_default_height(hmap_t p_height);
 
-    int get_minmax_allocated_sectors() const;
+//     int get_minmax_allocated_sectors() const;
 
     MapStorage();
     ~MapStorage();
 };
 
-VARIANT_ENUM_CAST(MapStorage::BufferType);
-VARIANT_ENUM_CAST(MapStorage::BufferStat);
+// VARIANT_ENUM_CAST(MapStorage::BufferType);
+// VARIANT_ENUM_CAST(MapStorage::BufferStat);
 
 } // namespace Terrainer
 
