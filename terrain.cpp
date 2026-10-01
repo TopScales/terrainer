@@ -456,11 +456,11 @@ void Terrain::_set_instance_data() {
 	for (int i = 0; i < count; ++i) {
 		const LODQuadTree::QTNode *node = quad_tree.get_selected_node(i);
 		int lod = node->get_lod_level();
-		int texture_layer = storage->get_node_texture_layer(node->key, lod);
+		int texture_layer = storage->get_node_texture_layer(node->key, lod, node->size);
 		int layer_next_lod = texture_layer;
 
 		if (node->use_morph()) {
-			layer_next_lod = storage->get_node_texture_layer(node->key.next_lod(), lod + 1);
+			layer_next_lod = storage->get_node_texture_layer(node->key.next_lod(), lod + 1, 2 * node->size);
 		}
 
 		const size_t data_index = i * MMESH_INSTANCE_DATA_SIZE;
@@ -1006,7 +1006,9 @@ void Terrain::_debug_nodes_aabb_draw() const {
 	for (int i = 0; i < num_nodes; ++i) {
 		const LODQuadTree::QTNode *node = quad_tree.get_selected_node(i);
 		const int lod = node->get_lod_level();
-		const Transform3D xform = quad_tree.get_node_transform(node);
+		Transform3D xform = quad_tree.get_node_transform(node);
+		xform.origin.y = node->min_y * map_scale.y;
+		xform.scale_basis(Vector3(1.0, (node->max_y - node->min_y) * map_scale.y, 1.0));
 		rs->multimesh_instance_set_transform(debug_aabb.multimesh, i, xform);
 	}
 }

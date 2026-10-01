@@ -208,7 +208,7 @@ LODQuadTree::NodeSelectionResult LODQuadTree::_lod_select(const Vector3 &p_viewe
         real_t next_distance_limit = lod_visibility_range[next_lod];
         uint16_t x = 2 * p_key.cell.x;
         uint16_t z = 2 * p_key.cell.z;
-        uint16_t half_size = p_size / 2;
+        uint16_t half_size = p_size >> 1;
 
         if (aabb_intersects_sphere(box, p_viewer_position, next_distance_limit)) {
             bool completely_in_frustum = frustum_it == INSIDE;

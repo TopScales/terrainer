@@ -65,7 +65,7 @@ public:
 
     struct TextureLayerData {
         PackedFloat32Array heights;
-        PackedByteArray normals;
+        PackedFloat32Array normals;
         uint64_t frame = 0;
         NodeKey key;
         int lod = 0;
@@ -73,8 +73,7 @@ public:
     };
 
     void get_minmax(const CellKey &p_key, int p_lod, hmap_t &r_min, hmap_t &r_max) const;
-    // PackedFloat32Array get_hmap(const CellKey &p_key, int p_lod) const;
-    void get_layer_data(const CellKey &p_key, int p_lod, TextureLayerData &r_layer_data) const;
+    void get_layer_data(const CellKey &p_key, int p_lod, int p_node_size, TextureLayerData &r_layer_data) const;
 
     Sector(const CellKey &p_sector, HashMap<CellKey, Region *> &p_regions, const RegionSpecs &p_specs);
     ~Sector();

@@ -432,7 +432,7 @@ public:
     void allocate_buffers(int p_sector_chunks, int p_num_nodes, int p_lods, const Vector3 &p_map_scale, real_t p_far_view);
     void allocate_textures(int p_layers);
 
-    int get_node_texture_layer(const NodeKey &p_key, int p_lod);
+    int get_node_texture_layer(const NodeKey &p_key, int p_lod, int p_node_size);
     Ref<Texture2DArrayRD> get_hmap_texture() const;
     Ref<Texture2DArrayRD> get_normal_texture() const;
 

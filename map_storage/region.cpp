@@ -163,7 +163,7 @@ void Region::load_hmap_region(const CellKey &p_region, const CellKey &p_regions,
                     if (node_ix < rsize - 1) {
                         hmap_t *prev_row_next = get_hmap_node_buffer(ilod, node_idx - rsize + 1);
                         top_pad[chunk_size] = prev_row_next[node_xpd_size * chunk_size + 1];
-                        prev_row_next[node_xpd_size * chunk_size] = hmap_ptr[chunk_size - 1];
+                        prev_row_next[node_xpd_size * (chunk_size + 1)] = hmap_ptr[chunk_size - 1];
                     }
                 }
 
@@ -243,7 +243,7 @@ void Region::load_hmap_region(const CellKey &p_region, const CellKey &p_regions,
         for (size_t ilod = 1; ilod < specs.region_lods; ++ilod) {
             for (Size inode = 0; inode < rsize; ++inode) {
                 const Size node_idx = (inode + 1) * rsize - 1;
-                hmap_t *right_col = get_hmap_node_buffer(ilod, node_idx) + chunk_size;
+                hmap_t *right_col = get_hmap_node_main(ilod, node_idx) + chunk_size - 1;
 
                 for (Size i = 0; i <= chunk_size; ++i) {
                     const Size ii = i * node_xpd_size;
@@ -259,12 +259,12 @@ void Region::load_hmap_region(const CellKey &p_region, const CellKey &p_regions,
 
     if (p_region.z == p_regions.z - 1) {
         rsize = region_size >> 1;
-        size_t nbytes = (node_size + 1) * sizeof(hmap_t);
+        size_t nbytes = (chunk_size + 1) * sizeof(hmap_t);
 
         for (size_t ilod = 1; ilod < specs.region_lods; ++ilod) {
             for (Size inode = 0; inode < rsize; ++inode) {
                 Size node_idx = inode + rsize * (rsize - 1);
-                hmap_t *bottom_row = get_hmap_node_buffer(ilod, node_idx) + node_xpd_size * chunk_size;
+                hmap_t *bottom_row = get_hmap_node_main(ilod, node_idx) + node_xpd_size * (chunk_size - 1);
                 memcpy(bottom_row + node_xpd_size, bottom_row, nbytes);
                 memcpy(bottom_row + 2 * node_xpd_size, bottom_row, nbytes);
             }

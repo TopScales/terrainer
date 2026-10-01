@@ -11,7 +11,7 @@
 
 #include "sector.h"
 
-// #include "../utils/compat_marshalls.h"
+#include "../utils/compat_marshalls.h"
 
 using namespace Terrainer;
 
@@ -81,16 +81,16 @@ void Sector::get_minmax(const CellKey &p_key, int p_lod, hmap_t &r_min, hmap_t &
 //     return data;
 // }
 
-void Sector::get_layer_data(const CellKey &p_key, int p_lod, TextureLayerData &r_layer_data) const {
+void Sector::get_layer_data(const CellKey &p_key, int p_lod, int p_node_size, TextureLayerData &r_layer_data) const {
     const Size node_xpd_size = specs.chunk_size + 3;
     const Size buffer_size = (specs.chunk_size + 1) * (specs.chunk_size + 1);
     const hmap_t *hmap_ptr = nullptr;
     PackedFloat32Array &heights = r_layer_data.heights;
     heights.resize(buffer_size);
     float *h_ptr = heights.ptrw();
-    PackedByteArray &normals = r_layer_data.normals;
+    PackedFloat32Array &normals = r_layer_data.normals;
     normals.resize(4 * buffer_size);
-    uint8_t *n_ptr = normals.ptrw();
+    float *n_ptr = normals.ptrw();
     const real_t y_scale = specs.scale.y;
 
     if (p_lod < specs.region_lods) {
@@ -109,10 +109,11 @@ void Sector::get_layer_data(const CellKey &p_key, int p_lod, TextureLayerData &r
             heights.fill(h);
 
             for (int i = 0; i < buffer_size; ++i) {
-                const int ii = 3 * i;
-                n_ptr[ii] = 127;
-                n_ptr[ii + 1] = 255;
-                n_ptr[ii + 2] = 127;
+                const int ii = 4 * i;
+                n_ptr[ii] = 0.0;
+                n_ptr[ii + 1] = 1.0;
+                n_ptr[ii + 2] = 0.0;
+                n_ptr[ii + 3] = 0.0;
             }
 
             return;
@@ -127,8 +128,7 @@ void Sector::get_layer_data(const CellKey &p_key, int p_lod, TextureLayerData &r
         node_buffer[i] = hmap_ptr[i] * y_scale;
     }
 
-    const float dx_inv = 1.0f / (2.0f * specs.scale.x);
-    const float dz_inv = 1.0f / (2.0f * specs.scale.z);
+    const float d = 2.0 * float(specs.chunk_size * p_node_size);
 
     // Tangent can be calculated as: vec3 tangent = vec3(sqrt(1.0 - n.w * n.w), n.w, 0)
     // Bitangent can be calculated as: vec3 bitangent = cross(n.xyz, tangent)
@@ -141,15 +141,26 @@ void Sector::get_layer_data(const CellKey &p_key, int p_lod, TextureLayerData &r
             const Size idx_xp = idx + 1;
             const Size idx_zn = idx - node_xpd_size;
             const Size idx_zp = idx + node_xpd_size;
-            const float dh_dx = (node_buffer[idx_xn] - node_buffer[idx_xp]) * dx_inv;
-            const float dh_dz = (node_buffer[idx_zn] - node_buffer[idx_zp]) * dz_inv;
-            const Vector3 n = Vector3(dh_dx, 1.0, dh_dz).normalized();
-            const Size ii = 3 * idx;
-            n_ptr[0] = uint8_t((0.5 * n.x + 0.5) * 255.0);
-            n_ptr[1] = uint8_t((0.5 * n.y + 0.5) * 255.0);
-            n_ptr[2] = uint8_t((0.5 * n.z + 0.5) * 255.0);
-            const float t = dh_dx / Math::sqrt(1.0 + dh_dx * dh_dx);
-            n_ptr[3] = uint8_t((0.5 * t + 0.5) * 255.0);
+            const Vector3 vx = Vector3(d, (node_buffer[idx_xp] - node_buffer[idx_xn]), 0.0).normalized();
+            const Vector3 vz = Vector3(0.0, (node_buffer[idx_zp] - node_buffer[idx_zn]), d).normalized();
+            const Vector3 n = vz.cross(vx);
+            n_ptr[0] = n.x;
+            n_ptr[1] = n.y;
+            n_ptr[2] = n.z;
+            n_ptr[3] = 1.0;
+            // encode_half(n.x, n_ptr);
+            // encode_half(n.y, n_ptr + 2);
+            // encode_half(n.z, n_ptr + 4);
+            // encode_half(1.0, n_ptr + 6);
+            // const float dh_dx = (node_buffer[idx_xp] - node_buffer[idx_xn]) * d_inv;
+            // const float dh_dz = (node_buffer[idx_zp] - node_buffer[idx_zn]) * d_inv;
+            // const Vector3 n = Vector3(dh_dx, -1.0 / y_scale, dh_dz).normalized();
+            // n_ptr[0] = uint8_t((0.5 * n.x + 0.5) * 255.0);
+            // n_ptr[1] = uint8_t((0.5 * n.y + 0.5) * 255.0);
+            // n_ptr[2] = uint8_t((0.5 * n.z + 0.5) * 255.0);
+            // n_ptr[3] = 255;
+            // const float t = dh_dx / Math::sqrt(1.0 + dh_dx * dh_dx);
+            // n_ptr[3] = uint8_t((0.5 * t + 0.5) * 255.0);
             n_ptr += 4;
         }
     }

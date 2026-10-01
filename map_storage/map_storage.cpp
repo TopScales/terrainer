@@ -365,7 +365,7 @@ void MapStorage::allocate_textures(int p_layers) {
     }
 }
 
-int MapStorage::get_node_texture_layer(const NodeKey &p_key, int p_lod) {
+int MapStorage::get_node_texture_layer(const NodeKey &p_key, int p_lod, int p_node_size) {
     ERR_FAIL_INDEX_V_EDMSG(p_lod, specs.lods, 0, "Incorrect LOD level.");
     HashMap<NodeKey, int> &map = texture_layers.write[p_lod];
     int *layer_ptr = map.getptr(p_key);
@@ -388,14 +388,14 @@ int MapStorage::get_node_texture_layer(const NodeKey &p_key, int p_lod) {
 
         int layer = _next_layer();
         TextureLayerData &layer_data = layers.write[layer];
-        sector->get_layer_data(p_key.cell, p_lod, layer_data);
+        sector->get_layer_data(p_key.cell, p_lod, p_node_size, layer_data);
         layer_data.frame = current_frame;
         layer_data.lod = p_lod;
         layer_data.key = p_key;
         layer_data.free = false;
         RenderingDevice *rd = RS::get_singleton()->get_rendering_device();
         rd->texture_update(rd_hmap_texture, layer, layer_data.heights.to_byte_array());
-        rd->texture_update(rd_normal_texture, layer, layer_data.normals);
+        rd->texture_update(rd_normal_texture, layer, layer_data.normals.to_byte_array());
         map[p_key] = layer;
         return layer;
     }
@@ -1028,7 +1028,7 @@ void MapStorage::_allocate_textures(int p_main_layers, bool p_use_extra_buffer) 
     hmap_texture->set_texture_rd_rid(rd_hmap_texture);
     RenderingDevice::TextureFormat normal_format;
     normal_format.array_layers = num_layers;
-    normal_format.format = RenderingDevice::DATA_FORMAT_R8G8B8A8_UNORM;
+    normal_format.format = RenderingDevice::DATA_FORMAT_R32G32B32A32_SFLOAT;
     normal_format.width = specs.chunk_size + 1;
     normal_format.height = specs.chunk_size + 1;
     normal_format.mipmaps = 1;
