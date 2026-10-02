@@ -70,10 +70,14 @@ int LODQuadTree::set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_rad
     morph_start.set(lod_levels - 1, current_radius);
     sector_count_x = Math::ceil((real_t)world_size.x / (real_t)sector_size);
     sector_count_z = Math::ceil((real_t)world_size.y / (real_t)sector_size);
-    lods_count.resize(lod_levels);
     real_t offset_x = (real_t)(world_size.x / 2) * chunk_size * map_scale.x;
     real_t offset_z = (real_t)(world_size.y / 2) * chunk_size * map_scale.z;
     world_offset = Vector3(-offset_x, 0.0, -offset_z);
+
+    if (info_update_enabled) {
+        info_lods_count.resize(lod_levels);
+    }
+
     return num_nodes;
 }
 
@@ -82,7 +86,13 @@ LODQuadTree::NodeSelectionResult LODQuadTree::select_sector_nodes(const Vector3 
         return OUT_MAP;
     }
 
-    return _lod_select(p_viewer_position, p_storage, false, NodeKey(p_sector, CellKey()), sector_size, lod_levels - 1, p_stop_at_lod_level);
+    NodeSelectionResult res = _lod_select(p_viewer_position, p_storage, false, NodeKey(p_sector, CellKey()), sector_size, lod_levels - 1, p_stop_at_lod_level);
+
+    if (info_update_enabled) {
+        _update_info();
+    }
+
+    return res;
 }
 
 // void LODQuadTree::update_stats() {
@@ -145,10 +155,18 @@ const LODQuadTree::QTNode *LODQuadTree::get_selected_node(int p_index) const {
 //     return node.get_lod_level();
 // }
 
-// int LODQuadTree::get_lod_nodes_count(int p_level) const {
-//     ERR_FAIL_INDEX_V_EDMSG(p_level, lods_count.size(), 0, "Invalid LOD level index.");
-//     return lods_count[p_level];
-// }
+int LODQuadTree::info_get_lod_nodes_count(int p_level) const {
+    ERR_FAIL_INDEX_V_EDMSG(p_level, info_lods_count.size(), 0, "Invalid LOD level index.");
+    return info_lods_count[p_level];
+}
+
+int LODQuadTree::info_get_min_selected_lod() const {
+    return info_min_selected_lod;
+}
+
+int LODQuadTree::info_get_max_selected_lod() const {
+    return info_max_selected_lod;
+}
 
 Ref<ImageTexture> LODQuadTree::get_morph_texture() const {
     PackedByteArray buffer;
@@ -179,6 +197,20 @@ Transform3D LODQuadTree::get_node_transform(const QTNode *p_node) const {
     const Vector3 cell_pos = Vector3(p_node->key.cell.x * bx.x, 0.0, p_node->key.cell.z * bz.z);
     const Vector3 origin = cell_pos + sector_pos + world_offset;
     return Transform3D(Basis(bx, by, bz), origin);
+}
+
+void LODQuadTree::set_info_update_enabled(bool p_enabled) {
+    info_update_enabled = p_enabled;
+
+    if (info_update_enabled) {
+        info_lods_count.resize(lod_levels);
+    } else {
+        info_lods_count.clear();
+    }
+}
+
+bool LODQuadTree::is_info_update_enabled() const {
+    return info_update_enabled;
 }
 
 LODQuadTree::NodeSelectionResult LODQuadTree::_lod_select(const Vector3 &p_viewer_position, const Ref<MapStorage> &p_storage, bool p_parent_inside_frustum, const NodeKey &p_key, uint16_t p_size, int p_lod_level, int p_stop_at_lod_level) {
@@ -258,7 +290,7 @@ LODQuadTree::NodeSelectionResult LODQuadTree::_lod_select(const Vector3 &p_viewe
         }
 
         real_t max_distance_sqrd = aabb_max_distance_sqrd_from_point(box, p_viewer_position);
-        bool node_morphs = max_distance_sqrd > morph_start[p_lod_level];
+        bool node_morphs = p_lod_level < lod_levels - 1 && max_distance_sqrd > morph_start[p_lod_level];
         uint16_t flags = QTNode::get_flags(p_lod_level, !remove_subnode_tl, !remove_subnode_tr, !remove_subnode_bl, !remove_subnode_br, node_morphs, p_key.cell);
         selected_buffer[selection_count] = QTNode(p_key, p_size, min_y, max_y, flags);
         selection_count++;
@@ -301,6 +333,20 @@ LODQuadTree::IntersectType LODQuadTree::_aabb_intersects_frustum(const AABB &p_a
     }
 
     return in == frustum.size() ? INSIDE : INTERSECTS;
+}
+
+void LODQuadTree::_update_info() {
+    int *count_ptr = info_lods_count.ptrw();
+    info_lods_count.fill(0);
+    info_min_selected_lod = MapStorage::MAX_LOD_LEVELS;
+    info_max_selected_lod = 0;
+
+    for (int i = 0; i < selection_count; ++i) {
+        int selected_node_lod_level = selected_buffer[i].get_lod_level();
+        info_min_selected_lod = MIN(info_min_selected_lod, selected_node_lod_level);
+        info_max_selected_lod = MAX(info_max_selected_lod, selected_node_lod_level);
+        count_ptr[selected_node_lod_level]++;
+    }
 }
 
 LODQuadTree::LODQuadTree() {

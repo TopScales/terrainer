@@ -366,7 +366,7 @@ void MapStorage::allocate_textures(int p_layers) {
 }
 
 int MapStorage::get_node_texture_layer(const NodeKey &p_key, int p_lod, int p_node_size) {
-    ERR_FAIL_INDEX_V_EDMSG(p_lod, specs.lods, 0, "Incorrect LOD level.");
+    ERR_FAIL_INDEX_V_EDMSG(p_lod, specs.lods, 0, vformat("Incorrect LOD level %d (%d).", p_lod, specs.lods));
     HashMap<NodeKey, int> &map = texture_layers.write[p_lod];
     int *layer_ptr = map.getptr(p_key);
 
@@ -407,6 +407,14 @@ Ref<Texture2DArrayRD> MapStorage::get_hmap_texture() const {
 
 Ref<Texture2DArrayRD> MapStorage::get_normal_texture() const {
     return normal_texture;
+}
+
+int MapStorage::get_allocated_texture_layers() const {
+    return num_layers;
+}
+
+int MapStorage::get_used_texture_layers() const {
+    return used_layers - unused_texture_layers.size();
 }
 
 void MapStorage::update_viewer(const Vector3 &p_viewer_pos, const Vector3 &p_viewer_vel, const Vector3 &p_viewer_forward) {
@@ -631,6 +639,8 @@ void MapStorage::_bind_methods() {
     ClassDB::bind_method(D_METHOD("is_size_locked"), &MapStorage::is_size_locked);
     ClassDB::bind_method(D_METHOD("set_data_locked", "locked"), &MapStorage::set_data_locked);
     ClassDB::bind_method(D_METHOD("is_data_locked"), &MapStorage::is_data_locked);
+    ClassDB::bind_method(D_METHOD("get_allocated_texture_layers"), &MapStorage::get_allocated_texture_layers);
+    ClassDB::bind_method(D_METHOD("get_used_texture_layers"), &MapStorage::get_used_texture_layers);
 //     ClassDB::bind_method(D_METHOD("get_buffer_stat", "buffer", "stat"), &MapStorage::get_buffer_stat);
 
     ClassDB::bind_method(D_METHOD("store_heightmap_data", "data", "size"), &MapStorage::store_heightmap_data);

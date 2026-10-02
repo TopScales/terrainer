@@ -435,6 +435,8 @@ public:
     int get_node_texture_layer(const NodeKey &p_key, int p_lod, int p_node_size);
     Ref<Texture2DArrayRD> get_hmap_texture() const;
     Ref<Texture2DArrayRD> get_normal_texture() const;
+    int get_allocated_texture_layers() const;
+    int get_used_texture_layers() const;
 
     void update_viewer(const Vector3 &p_viewer_pos, const Vector3 &p_viewer_vel, const Vector3 &p_viewer_forward);
     void stop_io();
