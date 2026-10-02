@@ -44,44 +44,6 @@ void Sector::get_minmax(const CellKey &p_key, int p_lod, hmap_t &r_min, hmap_t &
     }
 }
 
-// PackedFloat32Array Sector::get_hmap(const CellKey &p_key, int p_lod) const {
-//     const size_t node_size = (specs.chunk_size + 1) * (specs.chunk_size + 1);
-//     const hmap_t *hmap_ptr = nullptr;
-//     PackedFloat32Array data;
-//     data.resize(node_size);
-//     float *ptr = data.ptrw();
-
-//     if (p_lod < specs.region_lods) {
-//         const int region_nodes = specs.region_size >> p_lod;
-//         const int region_ix = p_key.x / region_nodes;
-//         const int region_iz = p_key.z / region_nodes;
-//         const int region_idx = region_ix + region_iz * specs.sector_regions;
-
-//         if (regions[region_idx]) {
-//             const int node_ix = (int)p_key.x - region_ix * region_nodes + (region_offset.x >> p_lod);
-//             const int node_iz = (int)p_key.z - region_iz * region_nodes + (region_offset.z >> p_lod);
-//             const int node_idx = node_ix + node_iz * region_nodes;
-//             hmap_ptr = regions[region_idx]->get_hmap_chunk(p_lod, node_idx);
-//         } else {
-//             float h = specs.default_height * specs.y_scale;
-//             data.fill(h);
-//             return data;
-//         }
-//     } else {
-//         const size_t side = specs.sector_size >> p_lod;
-//         const int block_idx = p_key.x + p_key.z * side;
-//         hmap_ptr = hmap_buffer + specs.sector_hmap_lod_offsets[p_lod - specs.region_lods] + block_idx * node_size;
-//     }
-
-//     for (int i = 0; i < node_size; ++i) {
-//         float h = hmap_ptr[i] * specs.y_scale;
-//         *ptr = h;
-//         ptr++;
-//     }
-
-//     return data;
-// }
-
 void Sector::get_layer_data(const CellKey &p_key, int p_lod, int p_node_size, TextureLayerData &r_layer_data) const {
     const Size node_xpd_size = specs.chunk_size + 3;
     const Size buffer_size = (specs.chunk_size + 1) * (specs.chunk_size + 1);
@@ -89,9 +51,9 @@ void Sector::get_layer_data(const CellKey &p_key, int p_lod, int p_node_size, Te
     PackedFloat32Array &heights = r_layer_data.heights;
     heights.resize(buffer_size);
     float *h_ptr = heights.ptrw();
-    PackedFloat32Array &normals = r_layer_data.normals;
-    normals.resize(4 * buffer_size);
-    float *n_ptr = normals.ptrw();
+    PackedByteArray &normals = r_layer_data.normals;
+    normals.resize(8 * buffer_size);
+    uint8_t *n_ptr = normals.ptrw();
     const real_t y_scale = specs.scale.y;
 
     if (p_lod < specs.region_lods) {
@@ -111,11 +73,11 @@ void Sector::get_layer_data(const CellKey &p_key, int p_lod, int p_node_size, Te
             heights.fill(h);
 
             for (int i = 0; i < buffer_size; ++i) {
-                const int ii = 4 * i;
-                n_ptr[ii] = 0.0;
-                n_ptr[ii + 1] = 1.0;
-                n_ptr[ii + 2] = 0.0;
-                n_ptr[ii + 3] = 0.0;
+                const int ii = 8 * i;
+                encode_half(0.0, n_ptr);
+                encode_half(1.0, n_ptr + 2);
+                encode_half(0.0, n_ptr + 4);
+                encode_half(1.0, n_ptr + 6);
             }
 
             return;
@@ -146,24 +108,11 @@ void Sector::get_layer_data(const CellKey &p_key, int p_lod, int p_node_size, Te
             const Vector3 vx = Vector3(d, (node_buffer[idx_xp] - node_buffer[idx_xn]), 0.0).normalized();
             const Vector3 vz = Vector3(0.0, (node_buffer[idx_zp] - node_buffer[idx_zn]), d).normalized();
             const Vector3 n = vz.cross(vx);
-            n_ptr[0] = n.x;
-            n_ptr[1] = n.y;
-            n_ptr[2] = n.z;
-            n_ptr[3] = 1.0;
-            // encode_half(n.x, n_ptr);
-            // encode_half(n.y, n_ptr + 2);
-            // encode_half(n.z, n_ptr + 4);
-            // encode_half(1.0, n_ptr + 6);
-            // const float dh_dx = (node_buffer[idx_xp] - node_buffer[idx_xn]) * d_inv;
-            // const float dh_dz = (node_buffer[idx_zp] - node_buffer[idx_zn]) * d_inv;
-            // const Vector3 n = Vector3(dh_dx, -1.0 / y_scale, dh_dz).normalized();
-            // n_ptr[0] = uint8_t((0.5 * n.x + 0.5) * 255.0);
-            // n_ptr[1] = uint8_t((0.5 * n.y + 0.5) * 255.0);
-            // n_ptr[2] = uint8_t((0.5 * n.z + 0.5) * 255.0);
-            // n_ptr[3] = 255;
-            // const float t = dh_dx / Math::sqrt(1.0 + dh_dx * dh_dx);
-            // n_ptr[3] = uint8_t((0.5 * t + 0.5) * 255.0);
-            n_ptr += 4;
+            encode_half(n.x, n_ptr);
+            encode_half(n.y, n_ptr + 2);
+            encode_half(n.z, n_ptr + 4);
+            encode_half(1.0, n_ptr + 6);
+            n_ptr += 8;
         }
     }
 }
@@ -376,7 +325,7 @@ Sector::Sector(const CellKey &p_sector, HashMap<CellKey, Region*> &p_regions, co
                         if (node_ix < nnodes - 1) {
                             hmap_t *prev_row_next = hmap_lod_ptr + (node_idx - rsize + 1) * node_size;
                             top_pad[chunk_size] = prev_row_next[node_xpd_size * chunk_size + 1];
-                            prev_row_next[node_xpd_size * chunk_size] = hmap_ptr[chunk_size - 1];
+                            prev_row_next[node_xpd_size * (chunk_size + 1 )] = hmap_ptr[chunk_size - 1];
                         }
                     }
 

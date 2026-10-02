@@ -243,7 +243,10 @@ void Region::load_hmap_region(const CellKey &p_region, const CellKey &p_regions,
         for (size_t ilod = 1; ilod < specs.region_lods; ++ilod) {
             for (Size inode = 0; inode < rsize; ++inode) {
                 const Size node_idx = (inode + 1) * rsize - 1;
-                hmap_t *right_col = get_hmap_node_main(ilod, node_idx) + chunk_size - 1;
+                hmap_t *corner = get_hmap_node_buffer(ilod, node_idx) + chunk_size + 1;
+                hmap_t *right_col = corner + node_xpd_size - 1;
+                corner[0] = right_col[0];
+                corner[node_xpd_size * (chunk_size + 2)] = right_col[node_xpd_size * (chunk_size + 1)];
 
                 for (Size i = 0; i <= chunk_size; ++i) {
                     const Size ii = i * node_xpd_size;
@@ -264,7 +267,10 @@ void Region::load_hmap_region(const CellKey &p_region, const CellKey &p_regions,
         for (size_t ilod = 1; ilod < specs.region_lods; ++ilod) {
             for (Size inode = 0; inode < rsize; ++inode) {
                 Size node_idx = inode + rsize * (rsize - 1);
-                hmap_t *bottom_row = get_hmap_node_main(ilod, node_idx) + node_xpd_size * (chunk_size - 1);
+                hmap_t *corner = get_hmap_node_buffer(ilod, node_idx) + node_xpd_size * chunk_size;
+                hmap_t *bottom_row = corner + 1;
+                bottom_row[chunk_size + 2] = corner[0];
+                bottom_row[2 * node_xpd_size - 2] = bottom_row[chunk_size + 1];
                 memcpy(bottom_row + node_xpd_size, bottom_row, nbytes);
                 memcpy(bottom_row + 2 * node_xpd_size, bottom_row, nbytes);
             }

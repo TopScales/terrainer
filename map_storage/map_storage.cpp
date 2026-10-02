@@ -1038,7 +1038,7 @@ void MapStorage::_allocate_textures(int p_main_layers, bool p_use_extra_buffer) 
     hmap_texture->set_texture_rd_rid(rd_hmap_texture);
     RenderingDevice::TextureFormat normal_format;
     normal_format.array_layers = num_layers;
-    normal_format.format = RenderingDevice::DATA_FORMAT_R32G32B32A32_SFLOAT;
+    normal_format.format = RenderingDevice::DATA_FORMAT_R16G16B16A16_SFLOAT;
     normal_format.width = specs.chunk_size + 1;
     normal_format.height = specs.chunk_size + 1;
     normal_format.mipmaps = 1;
