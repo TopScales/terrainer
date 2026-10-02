@@ -143,9 +143,13 @@ public:
     void set_lod_distance_ratio(real_t p_ratio);
     real_t get_lod_distance_ratio() const;
 
-//     int info_get_lod_levels() const;
-//     int info_get_lod_nodes_count(int p_level) const;
-//     int info_get_selected_nodes_count() const;
+    void set_info_update_enabled(bool p_enabled);
+    bool is_info_update_enabled() const;
+    int info_get_lod_levels() const;
+    int info_get_lod_nodes_count(int p_level) const;
+    int info_get_selected_nodes_count() const;
+    int info_get_min_selected_lod() const;
+    int info_get_max_selected_lod() const;
 
     void set_debug_show_lod_color(bool p_show);
     bool is_debug_show_lod_color() const;

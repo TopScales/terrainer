@@ -25,9 +25,10 @@ void Sector::get_minmax(const CellKey &p_key, int p_lod, hmap_t &r_min, hmap_t &
         const int region_idx = region_ix + region_iz * specs.sector_regions;
 
         if (regions[region_idx]) {
-            const int node_ix = (int)p_key.x - region_ix * region_nodes + (region_offset.x >> p_lod);
-            const int node_iz = (int)p_key.z - region_iz * region_nodes + (region_offset.z >> p_lod);
-            const int node_idx = node_ix + node_iz * region_nodes;
+            int lod_shift = specs.lods - p_lod - 1;
+            const Size node_ix = (Size)p_key.x - region_ix * region_nodes + (region_offset.x << lod_shift);
+            const Size node_iz = (Size)p_key.z - region_iz * region_nodes + (region_offset.z << lod_shift);
+            const Size node_idx = node_ix + node_iz * region_nodes;
             const MinMax minmax = regions[region_idx]->get_minmax(p_lod, node_idx);
             r_min = minmax.min;
             r_max = minmax.max;
@@ -100,8 +101,9 @@ void Sector::get_layer_data(const CellKey &p_key, int p_lod, int p_node_size, Te
         const Size region_idx = region_ix + region_iz * specs.sector_regions;
 
         if (regions[region_idx]) {
-            const Size node_ix = (Size)p_key.x - region_ix * region_nodes + (region_offset.x >> p_lod);
-            const Size node_iz = (Size)p_key.z - region_iz * region_nodes + (region_offset.z >> p_lod);
+            int lod_shift = specs.lods - p_lod - 1;
+            const Size node_ix = (Size)p_key.x - region_ix * region_nodes + (region_offset.x << lod_shift);
+            const Size node_iz = (Size)p_key.z - region_iz * region_nodes + (region_offset.z << lod_shift);
             const Size node_idx = node_ix + node_iz * region_nodes;
             hmap_ptr = regions[region_idx]->get_hmap_node_buffer(p_lod, node_idx);
         } else {

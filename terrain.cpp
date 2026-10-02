@@ -124,17 +124,33 @@ real_t Terrain::get_lod_distance_ratio() const {
 	return quad_tree.lod_distance_ratio;
 }
 
-// int Terrain::info_get_lod_levels() const {
-// 	return quad_tree.lod_levels;
-// }
+void Terrain::set_info_update_enabled(bool p_enabled) {
+	quad_tree.set_info_update_enabled(p_enabled);
+}
 
-// int Terrain::info_get_lod_nodes_count(int p_level) const {
-// 	return quad_tree.get_lod_nodes_count(p_level);
-// }
+bool Terrain::is_info_update_enabled() const {
+	return quad_tree.is_info_update_enabled();
+}
 
-// int Terrain::info_get_selected_nodes_count() const {
-// 	return quad_tree.selection_count;
-// }
+int Terrain::info_get_lod_levels() const {
+	return quad_tree.lod_levels;
+}
+
+int Terrain::info_get_lod_nodes_count(int p_level) const {
+	return quad_tree.info_get_lod_nodes_count(p_level);
+}
+
+int Terrain::info_get_selected_nodes_count() const {
+	return quad_tree.selection_count;
+}
+
+int Terrain::info_get_min_selected_lod() const {
+	return quad_tree.info_get_min_selected_lod();
+}
+
+int Terrain::info_get_max_selected_lod() const {
+	return quad_tree.info_get_max_selected_lod();
+}
 
 void Terrain::set_debug_show_lod_color(bool p_show) {
 	debug_show_lod_color = p_show;
@@ -235,9 +251,13 @@ void Terrain::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_lod_distance_ratio", "ratio"), &Terrain::set_lod_distance_ratio);
 	ClassDB::bind_method(D_METHOD("get_lod_distance_ratio"), &Terrain::get_lod_distance_ratio);
 
-// 	ClassDB::bind_method(D_METHOD("info_get_lod_levels"), &Terrain::info_get_lod_levels);
-// 	ClassDB::bind_method(D_METHOD("info_get_lod_nodes_count", "level"), &Terrain::info_get_lod_nodes_count);
-// 	ClassDB::bind_method(D_METHOD("info_get_selected_nodes_count"), &Terrain::info_get_selected_nodes_count);
+	ClassDB::bind_method(D_METHOD("info_get_lod_levels"), &Terrain::info_get_lod_levels);
+	ClassDB::bind_method(D_METHOD("info_get_selected_nodes_count"), &Terrain::info_get_selected_nodes_count);
+	ClassDB::bind_method(D_METHOD("info_get_lod_nodes_count", "level"), &Terrain::info_get_lod_nodes_count);
+	ClassDB::bind_method(D_METHOD("set_info_update_enabled", "enabled"), &Terrain::set_info_update_enabled);
+	ClassDB::bind_method(D_METHOD("is_info_update_enabled"), &Terrain::is_info_update_enabled);
+	ClassDB::bind_method(D_METHOD("info_get_min_selected_lod"), &Terrain::info_get_min_selected_lod);
+	ClassDB::bind_method(D_METHOD("info_get_max_selected_lod"), &Terrain::info_get_max_selected_lod);
 
 	ClassDB::bind_method(D_METHOD("set_debug_show_lod_color", "show"), &Terrain::set_debug_show_lod_color);
 	ClassDB::bind_method(D_METHOD("is_debug_show_lod_color"), &Terrain::is_debug_show_lod_color);
