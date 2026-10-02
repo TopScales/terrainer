@@ -68,9 +68,11 @@ public:
     // };
 
 private:
-    static constexpr float BUFFER_EXTRA_ALLOCATION_FACTOR = 1.75f;
-    static constexpr float CLEANUP_BUFFER_UTILIZATION = 0.85f;
-    static const int CLEANUP_FRAME_TOLERANCE = 200;
+    static constexpr float LAYERS_EXTRA_ALLOCATION_FACTOR = 3.0f;
+    static constexpr float LAYERS_ALLOCATION_TOLERANCE = 0.9f;
+    // static constexpr float BUFFER_EXTRA_ALLOCATION_FACTOR = 1.75f;
+    static constexpr float CLEANUP_BUFFER_UTILIZATION = 0.9f;
+    static constexpr float CLEANUP_TARGET_FRAMES_FACTOR = 0.3f;
 
     // static const uint8_t FORMAT_LITTLE_ENDIAN = 0x11;
     // static const uint8_t FORMAT_BIG_ENDIAN = 0x22;
@@ -330,6 +332,15 @@ private:
 //         _FORCE_INLINE_ bool is_success() const { return status == Status::SUCCESS; }
 //         _FORCE_INLINE_ uint64_t latency() const { return io_end_time - io_start_time; }
 //     };
+    struct OrderedLayerCompare {
+        _FORCE_INLINE_ bool operator()(TextureLayerData *p_a, TextureLayerData *p_b) const {
+            if (p_a->free != p_b->free) {
+                return p_b->free;
+            } else {
+                return p_a->frame < p_b->frame;
+            }
+        }
+    };
 
     String directory_path;
     bool size_locked = false;
@@ -356,19 +367,21 @@ private:
 
     HashMap<CellKey, Region *> regions;
     HashMap<CellKey, Sector *> sectors;
-    Vector<TextureLayerData> layers;
-//     Vector<size_t> minmax_lod_offsets;
-//     BufferPool<hmap_t> *minmax_buffer = nullptr;
-//     HashMap<CellKey, Tracker> minmax_trackers;
-//     Vector<hmap_t> minmax_read;
-//     const mutable Tracker* cached_minmax_tracker = nullptr;
+
+    //     Vector<size_t> minmax_lod_offsets;
+    //     BufferPool<hmap_t> *minmax_buffer = nullptr;
+    //     HashMap<CellKey, Tracker> minmax_trackers;
+    //     Vector<hmap_t> minmax_read;
+    //     const mutable Tracker* cached_minmax_tracker = nullptr;
 //     mutable CellKey cached_sector = CellKey(UINT16_MAX, UINT16_MAX);
     real_t camera_far = 0.0;
 
 //     AlignedBuffer<hmap_t> *hmap_load = nullptr;
 //     VectorBufferPool<hmap_t> *hmap_buffer = nullptr;
 //     Vector<size_t> hmap_lod_offset;
-    Vector<HashMap<NodeKey, int>> texture_layers;
+    Vector<HashMap<NodeKey, TextureLayerData *>> texture_layers;
+    Vector<TextureLayerData> layers;
+    Vector<TextureLayerData *> ordered_layers;
     int num_layers = 0;
     int used_layers = 0;
     Vector<int> unused_texture_layers;
@@ -392,12 +405,13 @@ private:
 //     void _clean_minmax();
 //     void _cache_minmax(CellKey p_sector) const;
 
-    void _allocate_textures(int p_main_layers, bool p_use_extra_buffer = true);
+    bool _allocate_textures(int p_layers);
     int _next_layer();
     void _clean_layers();
 //     void _load_hmap(const NodeKey &p_region_key, const NodeKey &p_sector_key, int p_lod, const IORequest &p_request);
 //     // void _clean_hmap();
     void _clear_sectors();
+    void _clear_regions();
 
 protected:
 //     bool _set(const StringName &p_name, const Variant &p_value);
@@ -429,8 +443,8 @@ public:
 //     void load_minmax(CellKey p_sector, bool p_in_frustum);
     void get_minmax(const NodeKey &p_key, int p_lod, hmap_t &r_min, hmap_t &r_max);
     // void get_minmax(const NodeKey &p_key, int p_lod, hmap_t &r_min, hmap_t &r_max, bool &r_has_data) const;
-    void allocate_buffers(int p_sector_chunks, int p_num_nodes, int p_lods, const Vector3 &p_map_scale, real_t p_far_view);
-    void allocate_textures(int p_layers);
+    void set_up_map(int p_sector_chunks, int p_lods, const Vector3 &p_map_scale, real_t p_far_view);
+    bool allocate_textures(int p_layers);
 
     int get_node_texture_layer(const NodeKey &p_key, int p_lod, int p_node_size);
     Ref<Texture2DArrayRD> get_hmap_texture() const;

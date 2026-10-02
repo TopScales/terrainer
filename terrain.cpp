@@ -468,7 +468,16 @@ void Terrain::_set_instance_data() {
 	if (expand) {
 		nodes_max = count;
 		mmesh_instance_data.resize(nodes_max * MMESH_INSTANCE_DATA_SIZE);
-		storage->allocate_textures(nodes_max);
+
+		if (storage->allocate_textures(nodes_max)) {
+			if (material_flags & SHADER_PARAM_HMAP) {
+			_material->set_shader_parameter("hmap_tex", storage->get_hmap_texture());
+			}
+
+			if (material_flags & SHADER_PARAM_NORMAL) {
+				_material->set_shader_parameter("normal_tex", storage->get_normal_texture());
+			}
+		}
 	}
 
 	uint8_t *instance_data = mmesh_instance_data.ptrw();
@@ -588,11 +597,11 @@ void Terrain::_set_lod_levels() {
 		return;
 	}
 
-	int num_nodes = quad_tree.set_lod_levels(far_view, lod_detailed_chunks_radius);
+	quad_tree.set_lod_levels(far_view, lod_detailed_chunks_radius);
 	dirty = true;
 
 	if (quad_tree.lod_levels > 0) {
-		storage->allocate_buffers(quad_tree.sector_size, num_nodes, quad_tree.lod_levels, map_scale, far_view);
+		storage->set_up_map(quad_tree.sector_size, quad_tree.lod_levels, map_scale, far_view);
 
 		if (material_flags & SHADER_PARAM_MORPH_DATA) {
 			Ref<ImageTexture> morph_texture = quad_tree.get_morph_texture();
@@ -609,14 +618,6 @@ void Terrain::_set_lod_levels() {
 			if (debug_nodes_aabb_enabled) {
 				debug_aabb.material->set_shader_parameter("debug_lod_colors", debug_lod_colors_tex);
 			}
-		}
-
-		if (material_flags & SHADER_PARAM_HMAP) {
-			_material->set_shader_parameter("hmap_tex", storage->get_hmap_texture());
-		}
-
-		if (material_flags & SHADER_PARAM_NORMAL) {
-			_material->set_shader_parameter("normal_tex", storage->get_normal_texture());
 		}
 	}
 }

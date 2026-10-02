@@ -70,6 +70,7 @@ public:
         NodeKey key;
         int lod = 0;
         bool free = true;
+        int layer = 0;
     };
 
     void get_minmax(const CellKey &p_key, int p_lod, hmap_t &r_min, hmap_t &r_max) const;

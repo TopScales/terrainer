@@ -28,7 +28,8 @@ void MapStorage::store_heightmap_data(const PackedByteArray &p_data, const Vecto
     ERR_FAIL_COND_EDMSG(!DirAccess::exists(directory_path), "Storage directory does not exist.");
     ERR_FAIL_COND_EDMSG(data_locked, "Failed to store data: data is locked.");
     ERR_FAIL_COND_EDMSG(p_data.size() != p_size.x * p_size.y, "Incorrect data buffer size.");
-    clear();
+    _clear_sectors();
+    _clear_regions();
 
     if (specs.dirty) {
         specs.config();
@@ -61,7 +62,8 @@ void MapStorage::store_heightmap_data(const PackedByteArray &p_data, const Vecto
         region->store_hmap();
     }
 
-    _allocate_textures(num_layers, false);
+    used_layers = 0;
+    unused_texture_layers.clear();
     emit_changed();
 }
 
@@ -115,13 +117,8 @@ Error MapStorage::load_headers() {
 }
 
 void MapStorage::clear() {
-    for (KeyValue<CellKey, Region *> &kv : regions) {
-        Region *region = kv.value;
-        memdelete(region);
-    }
-
-    regions.clear();
     _clear_sectors();
+    _clear_regions();
 
     if (rd_hmap_texture.is_valid()) {
         hmap_texture = nullptr;
@@ -271,14 +268,13 @@ void MapStorage::get_minmax(const NodeKey &p_key, int p_lod, hmap_t &r_min, hmap
 //     r_has_data = cached_minmax_tracker->is_loaded();
 }
 
-void MapStorage::allocate_buffers(int p_sector_chunks, int p_num_nodes, int p_lods, const Vector3 &p_map_scale, real_t p_far_view) {
+void MapStorage::set_up_map(int p_sector_chunks, int p_lods, const Vector3 &p_map_scale, real_t p_far_view) {
     stop_io();
     _clear_sectors();
     specs.set_sector_info(p_sector_chunks, p_lods);
     specs.scale = p_map_scale;
     texture_layers.clear();
     texture_layers.resize(p_lods);
-    _allocate_textures(p_num_nodes);
     // map_scale = p_map_scale;
     // const int sector_cells = sector_size * chunk_size;
     // const real_t sector_world_size_x = sector_cells * map_scale.x;
@@ -359,22 +355,33 @@ void MapStorage::allocate_buffers(int p_sector_chunks, int p_num_nodes, int p_lo
 //     }
 }
 
-void MapStorage::allocate_textures(int p_layers) {
-    if (p_layers > num_layers) {
-        _allocate_textures(p_layers);
+bool MapStorage::allocate_textures(int p_layers) {
+    int max_layers = RS::get_singleton()->get_rendering_device()->limit_get(RD::LIMIT_MAX_TEXTURE_ARRAY_LAYERS);
+
+    if (p_layers > max_layers) {
+        ERR_PRINT_ED(vformat("Number of required texture layers (%d) is greater than the limit (%d).", p_layers, max_layers));
     }
+
+    int target_layers = p_layers * LAYERS_EXTRA_ALLOCATION_FACTOR;
+
+    if (int(target_layers * LAYERS_ALLOCATION_TOLERANCE) > num_layers) {
+        return _allocate_textures(MIN(target_layers, max_layers));
+    }
+
+    return false;
 }
 
 int MapStorage::get_node_texture_layer(const NodeKey &p_key, int p_lod, int p_node_size) {
     ERR_FAIL_INDEX_V_EDMSG(p_lod, specs.lods, 0, vformat("Incorrect LOD level %d (%d).", p_lod, specs.lods));
-    HashMap<NodeKey, int> &map = texture_layers.write[p_lod];
-    int *layer_ptr = map.getptr(p_key);
+    // HashMap<NodeKey, int> &map = texture_layers.write[p_lod];
+    HashMap<NodeKey, TextureLayerData *> &map = texture_layers.write[p_lod];
+    // int *layer_ptr = map.getptr(p_key);
+    TextureLayerData **data_ptr = map.getptr(p_key);
 
-    if (layer_ptr) {
-        int layer = *layer_ptr;
-        TextureLayerData &layer_data = layers.write[layer];
+    if (data_ptr) {
+        TextureLayerData &layer_data = **data_ptr;
         layer_data.frame = current_frame;
-        return layer;
+        return layer_data.layer;
     } else {
         Sector **sector_ptr = sectors.getptr(p_key.sector);
         Sector *sector = nullptr;
@@ -393,10 +400,11 @@ int MapStorage::get_node_texture_layer(const NodeKey &p_key, int p_lod, int p_no
         layer_data.lod = p_lod;
         layer_data.key = p_key;
         layer_data.free = false;
+        layer_data.layer = layer;
         RenderingDevice *rd = RS::get_singleton()->get_rendering_device();
         rd->texture_update(rd_hmap_texture, layer, layer_data.heights.to_byte_array());
-        rd->texture_update(rd_normal_texture, layer, layer_data.normals.to_byte_array());
-        map[p_key] = layer;
+        rd->texture_update(rd_normal_texture, layer, layer_data.normals);
+        map[p_key] = &layer_data;
         return layer;
     }
 }
@@ -680,6 +688,16 @@ void MapStorage::_clear_sectors() {
     }
 
     sectors.clear();
+}
+
+
+void MapStorage::_clear_regions() {
+    for (KeyValue<CellKey, Region *> &kv : regions) {
+        Region *region = kv.value;
+        memdelete(region);
+    }
+
+    regions.clear();
 }
 // void MapStorage::_process_requests(void *p_storage) {
 //     MapStorage *storage = static_cast<MapStorage *>(p_storage);
@@ -1010,7 +1028,11 @@ void MapStorage::_clear_sectors() {
 //     }
 // }
 
-void MapStorage::_allocate_textures(int p_main_layers, bool p_use_extra_buffer) {
+bool MapStorage::_allocate_textures(int p_layers) {
+    if (num_layers >= p_layers) {
+        return false;
+    }
+
     RenderingDevice *rd = RenderingServer::get_singleton()->get_rendering_device();
 
     if (rd_hmap_texture.is_valid()) {
@@ -1023,7 +1045,7 @@ void MapStorage::_allocate_textures(int p_main_layers, bool p_use_extra_buffer) 
         rd->free_rid(rd_normal_texture);
     }
 
-    num_layers = p_use_extra_buffer ? p_main_layers * BUFFER_EXTRA_ALLOCATION_FACTOR : p_main_layers;
+    num_layers = p_layers;
     RenderingDevice::TextureFormat height_format;
     height_format.array_layers = num_layers;
     height_format.format = RenderingDevice::DATA_FORMAT_R32_SFLOAT;
@@ -1054,6 +1076,8 @@ void MapStorage::_allocate_textures(int p_main_layers, bool p_use_extra_buffer) 
     for (int i = 0; i < texture_layers.size(); ++i) {
         texture_layers.write[i].clear();
     }
+
+    return true;
 }
 
 int MapStorage::_next_layer() {
@@ -1063,7 +1087,7 @@ int MapStorage::_next_layer() {
         unused_texture_layers.resize(new_size);
         return layer;
     } else {
-        ERR_FAIL_COND_V_EDMSG(used_layers >= num_layers - 1, 0, "No texture layers are available.");
+        ERR_FAIL_COND_V_EDMSG(used_layers >= num_layers, 0, "No texture layers are available.");
         return used_layers++;
     }
 }
@@ -1073,14 +1097,38 @@ void MapStorage::_clean_layers() {
     real_t utilization = (real_t)used / (real_t)num_layers;
 
     if (utilization > CLEANUP_BUFFER_UTILIZATION) {
-        for (int i = 0; i < used_layers; ++i) {
-            TextureLayerData &layer_data = layers.write[i];
+        if (ordered_layers.size() != layers.size()) {
+            ordered_layers.resize(layers.size());
+            TextureLayerData **order_ptr = ordered_layers.ptrw();
+            TextureLayerData *ptr = layers.ptrw();
 
-            if (!layer_data.free && current_frame - layer_data.frame > CLEANUP_FRAME_TOLERANCE) {
-                layer_data.free = true;
-                texture_layers.write[layer_data.lod].erase(layer_data.key);
-                unused_texture_layers.push_back(i);
+            for (int i = 0; i < layers.size(); ++i) {
+                order_ptr[i] = &ptr[i];
             }
+        }
+
+        ordered_layers.sort_custom<OrderedLayerCompare>();
+        int expected_free_layers = used * CLEANUP_TARGET_FRAMES_FACTOR;
+        int prev_frame = -1;
+        TextureLayerData **order_ptr = ordered_layers.ptrw();
+
+        for (int i = 0; i < ordered_layers.size(); ++i) {
+            TextureLayerData &data = *order_ptr[i];
+
+            if (data.frame == current_frame) {
+                break;
+            }
+
+            data.free = true;
+            texture_layers.write[data.lod].erase(data.key);
+            unused_texture_layers.push_back(data.layer);
+            expected_free_layers--;
+
+            if (expected_free_layers <= 0 && data.frame != prev_frame) {
+                break;
+            }
+
+            prev_frame = data.frame;
         }
     }
 }
