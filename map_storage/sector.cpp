@@ -73,11 +73,11 @@ void Sector::get_layer_data(const CellKey &p_key, int p_lod, int p_node_size, Te
             heights.fill(h);
 
             for (int i = 0; i < buffer_size; ++i) {
-                const int ii = 8 * i;
                 encode_half(0.0, n_ptr);
                 encode_half(1.0, n_ptr + 2);
                 encode_half(0.0, n_ptr + 4);
                 encode_half(1.0, n_ptr + 6);
+                n_ptr += 8;
             }
 
             return;

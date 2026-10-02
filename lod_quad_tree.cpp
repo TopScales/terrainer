@@ -23,7 +23,7 @@ void LODQuadTree::set_map_info(int p_chunk_size, int p_region_size, const Vector
     map_scale = p_map_scale;
 }
 
-int LODQuadTree::set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_radius) {
+void LODQuadTree::set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_radius) {
     lod_levels = 1;
     const real_t radius0 = LOD0_RADIUS_FACTOR * p_lod_detailed_chunks_radius * chunk_size * MAX(map_scale.x, map_scale.z);
     real_t level_radius = radius0;
@@ -31,18 +31,12 @@ int LODQuadTree::set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_rad
     real_t next_radius = level_radius;
     sector_size = 1;
     const int min_world_size = MIN(world_size.x, world_size.y);
-    int num_nodes = 0; // Estimate number of nodes.
-    real_t node_size = chunk_size * MIN(map_scale.x, map_scale.z); // Size used for estimation.
 
     while (next_radius < p_far_view && sector_size < min_world_size && lod_levels <= MapStorage::MAX_LOD_LEVELS) {
-        int n = int(Math::ceil(2 * next_radius / node_size));
-        int inner = int(2 * current_radius / node_size);
-        num_nodes += n * n - inner * inner;
         current_radius = next_radius;
         level_radius *= lod_distance_ratio;
         next_radius = level_radius + current_radius;
         sector_size *= 2;
-        node_size *= 2.0;
         lod_levels++;
     }
 
@@ -77,8 +71,6 @@ int LODQuadTree::set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_rad
     if (info_update_enabled) {
         info_lods_count.resize(lod_levels);
     }
-
-    return num_nodes;
 }
 
 LODQuadTree::NodeSelectionResult LODQuadTree::select_sector_nodes(const Vector3 &p_viewer_position, CellKey p_sector, const Ref<MapStorage> &p_storage, int p_stop_at_lod_level) {
