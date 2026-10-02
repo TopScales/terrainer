@@ -65,7 +65,7 @@ public:
 
     struct TextureLayerData {
         PackedFloat32Array heights;
-        PackedFloat32Array normals;
+        PackedByteArray normals;
         uint64_t frame = 0;
         NodeKey key;
         int lod = 0;
