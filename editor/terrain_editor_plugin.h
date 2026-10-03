@@ -49,6 +49,10 @@ private:
 	TerrainEditor *terrain_editor = nullptr;
 	Button *panel_button = nullptr;
     Vector<Terrain *> nodes;
+	Vector<HashMap<StringName, Variant>> params;
+	bool shaders_reset = false;
+
+	void _reset_shaders();
 
     void _on_tree_node_added(Node *p_node);
     void _on_terrain_exited(Terrain *p_terrain);
@@ -65,6 +69,8 @@ public:
 	virtual void edit(Object *p_object) override;
 	virtual bool handles(Object *p_object) const override;
 	virtual void make_visible(bool p_visible) override;
+	virtual void apply_changes() override;
+	virtual void save_external_data() override;
 #endif // TERRAINER_MODULE
 
 #ifdef TERRAINER_GDEXTENSION

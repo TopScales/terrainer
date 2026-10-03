@@ -13,6 +13,7 @@
 
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
+#include "core/variant/variant_utility.h"
 #include "utils/compat_marshalls.h"
 #include "servers/rendering/shader_include_db.h"
 // #include "utils/macros.h"
@@ -234,6 +235,43 @@ void Terrain::_notification(int p_what) {
 
 			storage->process();
 		} break;
+	}
+}
+
+void Terrain::reset_shader(HashMap<StringName, Variant> &r_params) {
+
+	if (material_flags & SHADER_PARAM_HMAP) {
+		r_params["hmap_tex"] = _material->get_shader_parameter("hmap_tex");
+		_material->set_shader_parameter("hmap_tex", Variant());
+	}
+
+	if (material_flags & SHADER_PARAM_NORMAL) {
+		r_params["normal_tex"] = _material->get_shader_parameter("normal_tex");
+		_material->set_shader_parameter("normal_tex", Variant());
+	}
+
+	if (material_flags & SHADER_PARAM_MORPH_DATA) {
+		r_params["morph_data"] = _material->get_shader_parameter("morph_data");
+		_material->set_shader_parameter("morph_data", Variant());
+	}
+
+	if (material_flags & SHADER_PARAM_LOD_COLORS) {
+		r_params["debug_lod_colors"] = _material->get_shader_parameter("debug_lod_colors");
+		_material->set_shader_parameter("debug_lod_colors", Variant());
+	}
+
+	if (material_flags & SHADER_PARAM_INSTANCE_DATA) {
+		r_params["instance_data"] = _material->get_shader_parameter("instance_data");
+		_material->set_shader_parameter("instance_data", Variant());
+	}
+
+}
+
+void Terrain::restore_shader(const HashMap<StringName, Variant> &p_params) {
+	for (const KeyValue<StringName, Variant> &kv : p_params) {
+		if (VariantUtilityFunctions::is_instance_valid(kv.value)) {
+			_material->set_shader_parameter(kv.key, kv.value);
+		}
 	}
 }
 
@@ -471,7 +509,7 @@ void Terrain::_set_instance_data() {
 
 		if (storage->allocate_textures(nodes_max)) {
 			if (material_flags & SHADER_PARAM_HMAP) {
-			_material->set_shader_parameter("hmap_tex", storage->get_hmap_texture());
+				_material->set_shader_parameter("hmap_tex", storage->get_hmap_texture());
 			}
 
 			if (material_flags & SHADER_PARAM_NORMAL) {
@@ -598,6 +636,7 @@ void Terrain::_set_lod_levels() {
 	}
 
 	quad_tree.set_lod_levels(far_view, lod_detailed_chunks_radius);
+	nodes_max = 0;
 	dirty = true;
 
 	if (quad_tree.lod_levels > 0) {
@@ -1164,6 +1203,10 @@ Terrain::~Terrain() {
 	rs->free_rid(mm_instance);
 	rs->free_rid(mm_chunks);
 	rs->free_rid(mesh);
+
+	if (storage_status == OK) {
+		storage->clear();
+	}
 
 	if (_shader.is_valid()) {
 		rs->free_rid(_shader);

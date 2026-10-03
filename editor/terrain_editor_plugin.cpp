@@ -12,6 +12,7 @@
 #include "terrain_editor_plugin.h"
 
 #include "core/object/callable_mp.h"
+#include "core/variant/variant_utility.h"
 #include "scene/main/scene_tree.h"
 
 #ifdef TERRAINER_GDEXTENSION
@@ -77,6 +78,30 @@ void TerrainEditorPlugin::_make_visible(bool p_visible) {
 	ERR_FAIL_NULL(terrain_editor);
 }
 
+void TerrainEditorPlugin::apply_changes() {
+	_reset_shaders();
+}
+
+void TerrainEditorPlugin::save_external_data() {
+	if (shaders_reset) {
+		Terrain **nodes_ptr = nodes.ptrw();
+		HashMap<StringName, Variant> *params_ptr = params.ptrw();
+		shaders_reset = false;
+
+		for (int i = 0; i < nodes.size(); ++i) {
+			Terrain *terrain = nodes_ptr[i];
+
+			if (terrain && VariantUtilityFunctions::is_instance_valid(terrain) && terrain->is_inside_tree()) {
+				terrain->restore_shader(params_ptr[i]);
+			}
+
+			params_ptr[i].clear();
+		}
+	} else {
+		_reset_shaders();
+	}
+}
+
 void TerrainEditorPlugin::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE: {
@@ -97,8 +122,16 @@ void TerrainEditorPlugin::_notification(int p_what) {
 	}
 }
 
-// void TerrainEditorPlugin::_bind_methods() {
-// }
+void TerrainEditorPlugin::_reset_shaders() {
+	Terrain **nodes_ptr = nodes.ptrw();
+	HashMap<StringName, Variant> *params_ptr = params.ptrw();
+
+	for (int i = 0; i < nodes.size(); ++i) {
+		nodes_ptr[i]->reset_shader(params_ptr[i]);
+	}
+
+	shaders_reset = true;
+}
 
 void TerrainEditorPlugin::_on_tree_node_added(Node *p_node) {
 	Terrain *terrain = Object::cast_to<Terrain>(p_node);
@@ -106,10 +139,13 @@ void TerrainEditorPlugin::_on_tree_node_added(Node *p_node) {
 	if (terrain && terrain->is_part_of_edited_scene()) {
 		terrain->connect("tree_exited", callable_mp(this, &TerrainEditorPlugin::_on_terrain_exited).bind(terrain));
 		nodes.push_back(terrain);
+		params.push_back(HashMap<StringName, Variant>());
 	}
 }
 
 void TerrainEditorPlugin::_on_terrain_exited(Terrain *p_terrain) {
 	p_terrain->disconnect("tree_exited", callable_mp(this, &TerrainEditorPlugin::_on_terrain_exited));
-	nodes.erase(p_terrain);
+	int64_t index = nodes.find(p_terrain);
+	nodes.remove_at(index);
+	params.remove_at(index);
 }

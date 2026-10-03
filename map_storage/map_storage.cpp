@@ -119,6 +119,12 @@ Error MapStorage::load_headers() {
 void MapStorage::clear() {
     _clear_sectors();
     _clear_regions();
+    num_layers = 0;
+    used_layers = 0;
+    unused_texture_layers.clear();
+    texture_layers.clear();
+    ordered_layers.clear();
+    layers.clear();
 
     if (rd_hmap_texture.is_valid()) {
         hmap_texture = nullptr;
@@ -271,88 +277,15 @@ void MapStorage::get_minmax(const NodeKey &p_key, int p_lod, hmap_t &r_min, hmap
 void MapStorage::set_up_map(int p_sector_chunks, int p_lods, const Vector3 &p_map_scale, real_t p_far_view) {
     stop_io();
     _clear_sectors();
+    num_layers = 0;
+    used_layers = 0;
+    unused_texture_layers.clear();
+    texture_layers.clear();
+    ordered_layers.clear();
+    layers.clear();
     specs.set_sector_info(p_sector_chunks, p_lods);
     specs.scale = p_map_scale;
-    texture_layers.clear();
     texture_layers.resize(p_lods);
-    // map_scale = p_map_scale;
-    // const int sector_cells = sector_size * chunk_size;
-    // const real_t sector_world_size_x = sector_cells * map_scale.x;
-    // const real_t sector_world_size_z = sector_cells * map_scale.z;
-    // size_t blocks_x = Math::ceil(2.0 * p_far_view / sector_world_size_x) + 1;
-    // size_t blocks_z = Math::ceil(2.0 * p_far_view / sector_world_size_z) + 1;
-    // camera_far = p_far_view;
-
-    // if (sector_size < region_size) {
-    //     blocks_x = region_size * (size_t)Math::ceil(real_t(sector_size * blocks_x) / real_t(region_size)) / sector_size + 1;
-    //     blocks_z = region_size * (size_t)Math::ceil(real_t(sector_size * blocks_z) / real_t(region_size)) / sector_size + 1;
-    // }
-
-    // const size_t minmax_block_count = blocks_x * blocks_z * BUFFER_EXTRA_ALLOCATION_FACTOR;
-//     minmax_lod_offsets.resize(lods);
-//     hmap_lod_offset.resize(lods);
-//     size_t minmax_block_size = 0;
-//     size_t minmax_lod_block_size = 2 * sector_size * sector_size; // Shouldn't be using region size???
-//     cancelled_frame = current_frame++;
-//     size_t hmap_block_size = chunk_size;
-//     size_t hmap_offset = 0;
-
-//     for (int ilod = 0; ilod < lods; ++ilod) {
-//         minmax_lod_offsets.set(ilod, minmax_block_size);
-//         hmap_lod_offset.set(ilod, hmap_offset);
-//         const size_t hmap_lod_block = (hmap_block_size + 1) * (hmap_block_size + 1) + 4 * (hmap_block_size + 1);
-//         hmap_offset += hmap_lod_block;
-//         hmap_block_size >>= 1;
-//         minmax_block_size += minmax_lod_block_size;
-//         minmax_lod_block_size >>= 2;
-//     }
-
-//     if (minmax_buffer) {
-//         if (minmax_buffer->get_block_size() != minmax_block_size && !minmax_read.is_empty()) {
-//             minmax_read.clear();
-//         }
-
-//         if (minmax_buffer->get_block_size() != minmax_block_size || minmax_buffer->get_block_count() != minmax_block_count) {
-//             memdelete(minmax_buffer);
-//             minmax_buffer = nullptr;
-//             minmax_trackers.clear();
-//         }
-//     }
-
-//     if (!minmax_buffer) {
-//         minmax_buffer = memnew(BufferPool<hmap_t>(minmax_block_size, minmax_block_count));
-//     }
-
-
-//     if (minmax_read.is_empty() && sector_size != region_size) {
-//         const int read_size = lod_expand(region_size, MIN(lods, saved_lods));
-//         minmax_read.resize(read_size);
-//     }
-
-//     textures_trackers.resize(lods);
-//     const size_t hmap_count = p_num_nodes * hmap_buffer_size_factor;
-//     const size_t hmap_size = (chunk_size + 1) * (chunk_size + 1);
-
-//     if (hmap_buffer && hmap_buffer->get_block_count() != hmap_count || hmap_buffer->get_block_size() != hmap_size) {
-//         memdelete(hmap_buffer);
-//         hmap_buffer = nullptr;
-//         memdelete(hmap_load);
-
-//         for (int i = 0; i < textures_trackers.size(); ++i) {
-//             for (KeyValue<NodeKey, Tracker> &kv : textures_trackers.get(i)) {
-//                 Tracker &tracker = kv.value;
-//                 TextureData *td = (TextureData *)tracker.pointer;
-//                 memdelete(td);
-//             }
-//         }
-
-//         textures_trackers.clear();
-//     }
-
-//     if (!hmap_buffer) {
-//         hmap_buffer = memnew(VectorBufferPool<hmap_t>(hmap_size, hmap_count));
-//         hmap_load = memnew(AlignedBuffer<hmap_t>(hmap_size + 4 * (chunk_size + 1)));
-//     }
 }
 
 bool MapStorage::allocate_textures(int p_layers) {
@@ -373,9 +306,7 @@ bool MapStorage::allocate_textures(int p_layers) {
 
 int MapStorage::get_node_texture_layer(const NodeKey &p_key, int p_lod, int p_node_size) {
     ERR_FAIL_INDEX_V_EDMSG(p_lod, specs.lods, 0, vformat("Incorrect LOD level %d (%d).", p_lod, specs.lods));
-    // HashMap<NodeKey, int> &map = texture_layers.write[p_lod];
     HashMap<NodeKey, TextureLayerData *> &map = texture_layers.write[p_lod];
-    // int *layer_ptr = map.getptr(p_key);
     TextureLayerData **data_ptr = map.getptr(p_key);
 
     if (data_ptr) {
@@ -699,6 +630,7 @@ void MapStorage::_clear_regions() {
 
     regions.clear();
 }
+
 // void MapStorage::_process_requests(void *p_storage) {
 //     MapStorage *storage = static_cast<MapStorage *>(p_storage);
 
