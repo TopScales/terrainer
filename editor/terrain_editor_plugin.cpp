@@ -102,6 +102,24 @@ void TerrainEditorPlugin::save_external_data() {
 	}
 }
 
+void TerrainEditorPlugin::run_scene(const String &p_scene, Vector<String> &r_args) {
+	if (shaders_reset) {
+		Terrain **nodes_ptr = nodes.ptrw();
+		HashMap<StringName, Variant> *params_ptr = params.ptrw();
+		shaders_reset = false;
+
+		for (int i = 0; i < nodes.size(); ++i) {
+			Terrain *terrain = nodes_ptr[i];
+
+			if (terrain && VariantUtilityFunctions::is_instance_valid(terrain) && terrain->is_inside_tree()) {
+				terrain->restore_shader(params_ptr[i]);
+			}
+
+			params_ptr[i].clear();
+		}
+	}
+}
+
 void TerrainEditorPlugin::_notification(int p_what) {
 	switch (p_what) {
 		case NOTIFICATION_ENTER_TREE: {

@@ -40,7 +40,7 @@ private:
     static const uint16_t BL_BIT = 1 << 6;
     static const uint16_t BR_BIT = 1 << 7;
     static const uint16_t MORPHS_MASK = 0x0F00;
-    static constexpr real_t LOD0_RADIUS_FACTOR = 1.2;
+    static constexpr real_t EXTRA_LOD_RADIUS_FACTOR = 1.2;
     static const int MAX_NODE_SELECTION_COUNT = 4096;
     static constexpr real_t DEFAULT_MORPH_START_RATIO = 0.66;
 
@@ -84,7 +84,7 @@ private:
         QTNode() : key(CellKey(), CellKey()) {}
 
         QTNode(const NodeKey &p_key, uint16_t p_size, uint16_t p_min_y, uint16_t p_max_y, uint16_t p_flags)
-        : key(p_key), size(p_size), min_y(p_min_y), max_y(p_max_y), flags(p_flags) {}
+            : key(p_key), size(p_size), min_y(p_min_y), max_y(p_max_y), flags(p_flags) {}
     };
 
     QTNode selected_buffer[MAX_NODE_SELECTION_COUNT];
@@ -131,7 +131,7 @@ public:
 //     void set_info(TTerrainInfo *p_info) { info = p_info; }
 //     void set_world_info(TWorldInfo *p_info) { world_info = p_info; }
     Ref<ImageTexture> get_morph_texture() const;
-    Transform3D get_node_transform(const QTNode *p_node) const;
+    Transform3D get_node_transform(const QTNode &p_node) const;
 
     void set_info_update_enabled(bool p_enabled);
     bool is_info_update_enabled() const;

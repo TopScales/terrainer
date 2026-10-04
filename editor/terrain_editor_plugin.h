@@ -71,6 +71,7 @@ public:
 	virtual void make_visible(bool p_visible) override;
 	virtual void apply_changes() override;
 	virtual void save_external_data() override;
+	virtual void run_scene(const String &p_scene, Vector<String> &r_args) override;
 #endif // TERRAINER_MODULE
 
 #ifdef TERRAINER_GDEXTENSION

@@ -481,8 +481,8 @@ void Terrain::_update_nodes() {
 	}
 
 	for (int i = 0; i < quad_tree.selection_count; ++i) {
-		const LODQuadTree::QTNode *node = quad_tree.get_selected_node(i);
-		const int lod = node->get_lod_level();
+		const LODQuadTree::QTNode &node = *quad_tree.get_selected_node(i);
+		const int lod = node.get_lod_level();
 		const Transform3D xform = quad_tree.get_node_transform(node);
 		rs->multimesh_instance_set_transform(mm_chunks, instance_index, xform);
 		instance_index++;
@@ -1064,11 +1064,11 @@ void Terrain::_debug_nodes_aabb_draw() const {
 	rs->multimesh_allocate_data(debug_aabb.multimesh, num_nodes, RenderingServerEnums::MULTIMESH_TRANSFORM_3D);
 
 	for (int i = 0; i < num_nodes; ++i) {
-		const LODQuadTree::QTNode *node = quad_tree.get_selected_node(i);
-		const int lod = node->get_lod_level();
+		const LODQuadTree::QTNode &node = *quad_tree.get_selected_node(i);
+		const int lod = node.get_lod_level();
 		Transform3D xform = quad_tree.get_node_transform(node);
-		xform.origin.y = node->min_y * map_scale.y;
-		xform.scale_basis(Vector3(1.0, (node->max_y - node->min_y) * map_scale.y, 1.0));
+		xform.origin.y = node.min_y * map_scale.y;
+		xform.scale_basis(Vector3(1.0, (node.max_y - node.min_y) * map_scale.y, 1.0));
 		rs->multimesh_instance_set_transform(debug_aabb.multimesh, i, xform);
 	}
 }
@@ -1204,12 +1204,20 @@ Terrain::~Terrain() {
 	rs->free_rid(mm_chunks);
 	rs->free_rid(mesh);
 
-	if (storage_status == OK) {
-		storage->clear();
-	}
-
 	if (_shader.is_valid()) {
 		rs->free_rid(_shader);
+	}
+
+	if (material.is_valid()) {
+		material = nullptr;
+	}
+
+	if (_material.is_valid()) {
+		_material = nullptr;
+	}
+
+	if (storage_status == OK) {
+		storage->clear();
 	}
 
 	if (debug_nodes_aabb_enabled) {
