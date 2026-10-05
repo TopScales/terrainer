@@ -703,8 +703,6 @@ void Terrain::_set_update_distance_tolerance_squared() {
 }
 
 void Terrain::_set_material() {
-	material_flags = 0;
-
 	if (!mesh_valid) {
 		return;
 	}
@@ -718,6 +716,7 @@ void Terrain::_set_material() {
 	if (debug_show_lod_color) {
 		_set_debug_material();
 	} else if (material.is_valid()) {
+		material_flags = 0;
 		_material = material;
 		_update_material_params();
 		_material->connect_changed(update_material);
@@ -744,10 +743,13 @@ void Terrain::_set_default_material() {
 
 	const String shader_code = R"(
 shader_type spatial;
+render_mode blend_mix, depth_draw_opaque, cull_back, diffuse_burley, specular_schlick_ggx;
 
 uniform sampler2D instance_data: filter_nearest;
 uniform vec2 grid_const = vec2(16.0, 0.0625);
 uniform sampler2D morph_data: filter_nearest;
+uniform sampler2DArray hmap_tex: repeat_disable;
+uniform sampler2DArray normal_tex: repeat_disable;
 
 const uint FLAG_TOP_LEFT = 1u << 4u;
 const uint FLAG_TOP_RIGHT = 1u << 5u;
@@ -756,6 +758,10 @@ const uint FLAG_BOTTOM_RIGHT = 1u << 7u;
 const float NaN = 0.0 / 0.0;
 
 varying flat uint FLAGS;
+varying flat int LAYER;
+varying flat int LAYER_NEXT;
+varying flat int LOD;
+varying vec2 UV_NEXT;
 
 // Morphs input vertex from high to low detailed mesh position.
 vec2 morph_vertex(vec2 in_vertex, float morph_k) {
@@ -765,24 +771,47 @@ return in_vertex - frac_part * morph_k;
 
 void vertex() {
 	vec2 raw_instance_data = texelFetch(instance_data, ivec2(INSTANCE_ID, 0), 0).rg;
+	int layers = floatBitsToInt(raw_instance_data.r);
+	LAYER = layers & 0xFFFF;
+	LAYER_NEXT = layers >> 16;
 	FLAGS = floatBitsToUint(raw_instance_data.g);
+	LOD = int(FLAGS & uint(0x000F));
+	int qx = int(FLAGS & uint(0x1000)) >> 12;
+	int qz = int(FLAGS & uint(0x2000)) >> 13;
 
 	// Morph mesh to match next LOD meshes.
-	int lod = int(FLAGS & uint(0x000F));
-	vec2 morph_const = texelFetch(morph_data, ivec2(lod, 0), 0).xy;
+	vec2 morph_const = texelFetch(morph_data, ivec2(LOD, 0), 0).xy;
 	float d = length((MODELVIEW_MATRIX * vec4(VERTEX, 1.0)).xyz);
 	float morph_k = 1.0f - clamp(morph_const.x - d * morph_const.y, 0.0, 1.0);
 	vec2 morphed_pos = morph_vertex(VERTEX.xz, morph_k);
+	UV = morphed_pos;
+	UV_NEXT = 0.5 * morphed_pos + vec2(0.5 * float(qx), 0.5 * float(qz));
 
+	// Get height.
+	float height = texture(hmap_tex, vec3(UV, float(LAYER))).x;
+	float height_next = texture(hmap_tex, vec3(UV_NEXT, float(LAYER_NEXT))).x;
+	height = mix(height, height_next, morph_k);
+
+	// Set vertex.
 	bool used = morphed_pos.x <= 0.5 && morphed_pos.y <= 0.5 && bool(FLAGS & FLAG_TOP_LEFT) ||
 		morphed_pos.x >= 0.5 && morphed_pos.y <= 0.5 && bool(FLAGS & FLAG_TOP_RIGHT) ||
 		morphed_pos.x <= 0.5 && morphed_pos.y >= 0.5 && bool(FLAGS & FLAG_BOTTOM_LEFT) ||
 		morphed_pos.x >= 0.5 && morphed_pos.y >= 0.5 && bool(FLAGS & FLAG_BOTTOM_RIGHT);
-	VERTEX = used ? vec3(morphed_pos.x, 0.0, morphed_pos.y) : vec3(NaN, NaN, NaN);
+	VERTEX = used ? vec3(morphed_pos.x, height, morphed_pos.y) : vec3(NaN, NaN, NaN);
+
+	// Set normal.
+	vec3 normal = texture(normal_tex, vec3(UV, float(LAYER))).xyz;
+	vec3 normal_next = texture(normal_tex, vec3(UV_NEXT, float(LAYER_NEXT))).xyz;
+	normal_next.y /= 2.0;
+	normal_next = normalize(normal_next);
+	NORMAL = mix(normal, normal_next, morph_k);
 }
 
 void fragment() {
-	ALBEDO = vec3(0.2, 0.9, 0.3);
+	ALBEDO = vec3(0.12, 0.72, 0.07);
+	ROUGHNESS = 1.0;
+	SPECULAR = 0.5;
+	METALLIC = 0.0;
 }
 	)";
 	rs->shader_set_code(_shader, shader_code);
@@ -1096,6 +1125,26 @@ void Terrain::_debug_set_lod_colors() {
 }
 
 void Terrain::_set_debug_material() {
+	if (material_flags & SHADER_PARAM_HMAP) {
+		_material->set_shader_parameter("hmap_tex", Variant());
+	}
+
+	if (material_flags & SHADER_PARAM_NORMAL) {
+		_material->set_shader_parameter("normal_tex", Variant());
+	}
+
+	if (material_flags & SHADER_PARAM_MORPH_DATA) {
+		_material->set_shader_parameter("morph_data", Variant());
+	}
+
+	if (material_flags & SHADER_PARAM_LOD_COLORS) {
+		_material->set_shader_parameter("debug_lod_colors", Variant());
+	}
+
+	if (material_flags & SHADER_PARAM_INSTANCE_DATA) {
+		_material->set_shader_parameter("instance_data", Variant());
+	}
+
 	_material.instantiate();
 	RenderingServer *const rs = RenderingServer::get_singleton();
 
@@ -1109,7 +1158,8 @@ uniform sampler2D instance_data: filter_nearest;
 uniform vec2 grid_const = vec2(16.0, 0.0625);
 uniform sampler2D morph_data: filter_nearest;
 uniform sampler2DArray hmap_tex: repeat_disable;
-uniform sampler2D debug_lod_colors: filter_nearest;
+uniform sampler2DArray normal_tex: repeat_disable;
+uniform sampler2D debug_lod_colors: filter_nearest, source_color;
 
 const uint FLAG_TOP_LEFT = 1u << 4u;
 const uint FLAG_TOP_RIGHT = 1u << 5u;
@@ -1159,18 +1209,28 @@ void vertex() {
 		morphed_pos.x >= 0.5 && morphed_pos.y >= 0.5 && bool(FLAGS & FLAG_BOTTOM_RIGHT);
 	VERTEX = used ? vec3(morphed_pos.x, height, morphed_pos.y) : vec3(NaN, NaN, NaN);
 
+	// Set normal.
+	vec3 normal = texture(normal_tex, vec3(UV, float(LAYER))).xyz;
+	vec3 normal_next = texture(normal_tex, vec3(UV_NEXT, float(LAYER_NEXT))).xyz;
+	normal_next.y /= 2.0;
+	normal_next = normalize(normal_next);
+	NORMAL = mix(normal, normal_next, morph_k);
+
 	// LOD color.
 	color = texelFetch(debug_lod_colors, ivec2(lod, 0), 0).rgb;
 }
 
 void fragment() {
 	ALBEDO = color;
+	ROUGHNESS = 1.0;
+	SPECULAR = 0.5;
+	METALLIC = 0.0;
 }
 	)";
 	rs->shader_set_code(_shader, shader_code);
 	RID mat_rid = _material->get_rid();
 	rs->material_set_shader(mat_rid, _shader);
-	material_flags = SHADER_PARAM_DEFAULT | SHADER_PARAM_LOD_COLORS | SHADER_PARAM_HMAP;
+	material_flags = SHADER_PARAM_DEFAULT | SHADER_PARAM_LOD_COLORS;
 	Ref<ImageTexture> morph_texture = quad_tree.get_morph_texture();
 	_material->set_shader_parameter("morph_data", morph_texture);
 	_debug_set_lod_colors();
@@ -1180,6 +1240,7 @@ void fragment() {
 		Vector2 grid_const = Vector2(0.5 * (real_t)storage->get_chunk_size(), 2.0 / (real_t)storage->get_chunk_size());
 		_material->set_shader_parameter("grid_const", grid_const);
 		_material->set_shader_parameter("hmap_tex", storage->get_hmap_texture());
+		_material->set_shader_parameter("normal_tex", storage->get_normal_texture());
 	}
 
 	if (mmesh_instance_data_tex.is_valid()) {
