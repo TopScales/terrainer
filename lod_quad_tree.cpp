@@ -25,7 +25,7 @@ void LODQuadTree::set_map_info(int p_chunk_size, int p_region_size, const Vector
 
 void LODQuadTree::set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_radius) {
     lod_levels = 1;
-    const real_t radius0 = LOD0_RADIUS_FACTOR * p_lod_detailed_chunks_radius * chunk_size * MAX(map_scale.x, map_scale.z);
+    const real_t radius0 = EXTRA_LOD_RADIUS_FACTOR * p_lod_detailed_chunks_radius * chunk_size * MAX(map_scale.x, map_scale.z);
     real_t level_radius = radius0;
     real_t current_radius = 0.0;
     real_t next_radius = level_radius;
@@ -60,8 +60,8 @@ void LODQuadTree::set_lod_levels(real_t p_far_view, int p_lod_detailed_chunks_ra
         current_radius += level_radius;
     }
 
-    lod_visibility_range.set(lod_levels - 1, current_radius);
-    morph_start.set(lod_levels - 1, current_radius);
+    lod_visibility_range.set(lod_levels - 1, p_far_view * EXTRA_LOD_RADIUS_FACTOR);
+    morph_start.set(lod_levels - 1, p_far_view);
     sector_count_x = Math::ceil((real_t)world_size.x / (real_t)sector_size);
     sector_count_z = Math::ceil((real_t)world_size.y / (real_t)sector_size);
     real_t offset_x = (real_t)(world_size.x / 2) * chunk_size * map_scale.x;
@@ -124,10 +124,6 @@ LODQuadTree::NodeSelectionResult LODQuadTree::select_sector_nodes(const Vector3 
 //     }
 // }
 
-// int LODQuadTree::get_selection_count() const {
-//     return selection_count;
-// }
-
 const LODQuadTree::QTNode *LODQuadTree::get_selected_node(int p_index) const {
     ERR_FAIL_INDEX_V_EDMSG(p_index, selection_count, nullptr, "Selected node index out of bounds.");
     return &selected_buffer[p_index];
@@ -181,12 +177,12 @@ Ref<ImageTexture> LODQuadTree::get_morph_texture() const {
     return texture;
 }
 
-Transform3D LODQuadTree::get_node_transform(const QTNode *p_node) const {
-    const Vector3 bx = Vector3(p_node->size * map_scale.x * chunk_size, 0.0, 0.0);
+Transform3D LODQuadTree::get_node_transform(const QTNode &p_node) const {
+    const Vector3 bx = Vector3(p_node.size * map_scale.x * chunk_size, 0.0, 0.0);
     const Vector3 by = Vector3(0.0, 1.0, 0.0);
-    const Vector3 bz = Vector3(0.0, 0.0, p_node->size * map_scale.z * chunk_size);
-    const Vector3 sector_pos = Vector3(p_node->key.sector.x * sector_size * map_scale.x * chunk_size, 0, p_node->key.sector.z * sector_size * map_scale.z * chunk_size);
-    const Vector3 cell_pos = Vector3(p_node->key.cell.x * bx.x, 0.0, p_node->key.cell.z * bz.z);
+    const Vector3 bz = Vector3(0.0, 0.0, p_node.size * map_scale.z * chunk_size);
+    const Vector3 sector_pos = Vector3(p_node.key.sector.x * sector_size * map_scale.x * chunk_size, 0, p_node.key.sector.z * sector_size * map_scale.z * chunk_size);
+    const Vector3 cell_pos = Vector3(p_node.key.cell.x * bx.x, 0.0, p_node.key.cell.z * bz.z);
     const Vector3 origin = cell_pos + sector_pos + world_offset;
     return Transform3D(Basis(bx, by, bz), origin);
 }

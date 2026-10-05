@@ -13,6 +13,7 @@
 
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
+#include "core/variant/variant_utility.h"
 #include "utils/compat_marshalls.h"
 #include "servers/rendering/shader_include_db.h"
 // #include "utils/macros.h"
@@ -237,6 +238,43 @@ void Terrain::_notification(int p_what) {
 	}
 }
 
+void Terrain::reset_shader(HashMap<StringName, Variant> &r_params) {
+
+	if (material_flags & SHADER_PARAM_HMAP) {
+		r_params["hmap_tex"] = _material->get_shader_parameter("hmap_tex");
+		_material->set_shader_parameter("hmap_tex", Variant());
+	}
+
+	if (material_flags & SHADER_PARAM_NORMAL) {
+		r_params["normal_tex"] = _material->get_shader_parameter("normal_tex");
+		_material->set_shader_parameter("normal_tex", Variant());
+	}
+
+	if (material_flags & SHADER_PARAM_MORPH_DATA) {
+		r_params["morph_data"] = _material->get_shader_parameter("morph_data");
+		_material->set_shader_parameter("morph_data", Variant());
+	}
+
+	if (material_flags & SHADER_PARAM_LOD_COLORS) {
+		r_params["debug_lod_colors"] = _material->get_shader_parameter("debug_lod_colors");
+		_material->set_shader_parameter("debug_lod_colors", Variant());
+	}
+
+	if (material_flags & SHADER_PARAM_INSTANCE_DATA) {
+		r_params["instance_data"] = _material->get_shader_parameter("instance_data");
+		_material->set_shader_parameter("instance_data", Variant());
+	}
+
+}
+
+void Terrain::restore_shader(const HashMap<StringName, Variant> &p_params) {
+	for (const KeyValue<StringName, Variant> &kv : p_params) {
+		if (VariantUtilityFunctions::is_instance_valid(kv.value)) {
+			_material->set_shader_parameter(kv.key, kv.value);
+		}
+	}
+}
+
 void Terrain::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_storage", "storage"), &Terrain::set_storage);
 	ClassDB::bind_method(D_METHOD("get_storage"), &Terrain::get_storage);
@@ -443,8 +481,8 @@ void Terrain::_update_nodes() {
 	}
 
 	for (int i = 0; i < quad_tree.selection_count; ++i) {
-		const LODQuadTree::QTNode *node = quad_tree.get_selected_node(i);
-		const int lod = node->get_lod_level();
+		const LODQuadTree::QTNode &node = *quad_tree.get_selected_node(i);
+		const int lod = node.get_lod_level();
 		const Transform3D xform = quad_tree.get_node_transform(node);
 		rs->multimesh_instance_set_transform(mm_chunks, instance_index, xform);
 		instance_index++;
@@ -471,7 +509,7 @@ void Terrain::_set_instance_data() {
 
 		if (storage->allocate_textures(nodes_max)) {
 			if (material_flags & SHADER_PARAM_HMAP) {
-			_material->set_shader_parameter("hmap_tex", storage->get_hmap_texture());
+				_material->set_shader_parameter("hmap_tex", storage->get_hmap_texture());
 			}
 
 			if (material_flags & SHADER_PARAM_NORMAL) {
@@ -598,6 +636,7 @@ void Terrain::_set_lod_levels() {
 	}
 
 	quad_tree.set_lod_levels(far_view, lod_detailed_chunks_radius);
+	nodes_max = 0;
 	dirty = true;
 
 	if (quad_tree.lod_levels > 0) {
@@ -1025,11 +1064,11 @@ void Terrain::_debug_nodes_aabb_draw() const {
 	rs->multimesh_allocate_data(debug_aabb.multimesh, num_nodes, RenderingServerEnums::MULTIMESH_TRANSFORM_3D);
 
 	for (int i = 0; i < num_nodes; ++i) {
-		const LODQuadTree::QTNode *node = quad_tree.get_selected_node(i);
-		const int lod = node->get_lod_level();
+		const LODQuadTree::QTNode &node = *quad_tree.get_selected_node(i);
+		const int lod = node.get_lod_level();
 		Transform3D xform = quad_tree.get_node_transform(node);
-		xform.origin.y = node->min_y * map_scale.y;
-		xform.scale_basis(Vector3(1.0, (node->max_y - node->min_y) * map_scale.y, 1.0));
+		xform.origin.y = node.min_y * map_scale.y;
+		xform.scale_basis(Vector3(1.0, (node.max_y - node.min_y) * map_scale.y, 1.0));
 		rs->multimesh_instance_set_transform(debug_aabb.multimesh, i, xform);
 	}
 }
@@ -1167,6 +1206,18 @@ Terrain::~Terrain() {
 
 	if (_shader.is_valid()) {
 		rs->free_rid(_shader);
+	}
+
+	if (material.is_valid()) {
+		material = nullptr;
+	}
+
+	if (_material.is_valid()) {
+		_material = nullptr;
+	}
+
+	if (storage_status == OK) {
+		storage->clear();
 	}
 
 	if (debug_nodes_aabb_enabled) {
