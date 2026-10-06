@@ -295,16 +295,22 @@ void Region::fill_hmap_region_pad(const CellKey &p_region, const CellKey &p_regi
             for (Size inode = 0; inode < rsize; ++inode) {
                 const Size node_idx = inode * rsize;
                 const Size prev_col_node_idx = node_idx + rsize - 1;
-                hmap_t *left_pad = get_hmap_node_buffer(ilod, node_idx) + node_xpd_size;
-                hmap_t *prev_col = prev_col_region->get_hmap_node_main(ilod, prev_col_node_idx) + chunk_size - 1;
+                hmap_t *node_buffer = get_hmap_node_buffer(ilod, node_idx);
+                hmap_t *left_pad = node_buffer + node_xpd_size;
+                hmap_t *prev_col = prev_col_region->get_hmap_node_buffer(ilod, prev_col_node_idx);
+                hmap_t *prev_col_main = prev_col + node_xpd_size + chunk_size;
 
                 for (Size i = 0; i <= chunk_size; ++i) {
                     Size ii = i * node_xpd_size;
-                    left_pad[ii] = prev_col[ii];
-                    prev_col[ii + 1] = left_pad[ii + 1];
-                    prev_col[ii + 2] = left_pad[ii + 2];
+                    left_pad[ii] = prev_col_main[ii];
+                    prev_col_main[ii + 1] = left_pad[ii + 1];
+                    prev_col_main[ii + 2] = left_pad[ii + 2];
                 }
+
+                prev_col[chunk_size + 1] = node_buffer[1];
+                prev_col_main[(chunk_size + 1) * node_xpd_size + 1] = left_pad[(chunk_size + 1) * node_xpd_size + 1];
             }
+
 
             rsize >>= 1;
         }
@@ -322,8 +328,9 @@ void Region::fill_hmap_region_pad(const CellKey &p_region, const CellKey &p_regi
                 const Size prev_row_node_idx = inode + rsize * (rsize - 1);
                 hmap_t *prev_row = prev_row_region->get_hmap_node_buffer(ilod, prev_row_node_idx) + node_xpd_size * chunk_size + 1;
                 memcpy(top_pad, prev_row, nbytes);
-                memcpy(prev_row + node_xpd_size, top_pad + node_xpd_size, nbytes);
+                memcpy(prev_row + node_xpd_size, top_pad + node_xpd_size, (chunk_size + 2) * sizeof(hmap_t));
                 memcpy(prev_row + 2 * node_xpd_size, top_pad + 2 * node_xpd_size, nbytes);
+                prev_row[chunk_size + 2] = top_pad[chunk_size + 2];
             }
 
             rsize >>= 1;
