@@ -889,60 +889,70 @@ void Terrain::_update_material_params() {
 	Ref<Shader> shader = _material->get_shader();
 
 	if (shader.is_valid() && shader->get_mode() == Shader::MODE_SPATIAL) {
+#ifdef TERRAINER_MODULE
 		List<PropertyInfo> params;
 		shader->get_shader_uniform_list(&params);
 
 		for (PropertyInfo &pi : params) {
-#ifdef TERRAINER_MODULE
 			if (pi.name == "morph_data") {
-#elif TERRAINER_GDEXTENSION
-			if (pi.name == StringName("morph_data")) {
-#endif
 				if (pi.type == Variant::Type::OBJECT && pi.hint_string == "Texture2D") {
 					material_flags |= SHADER_PARAM_MORPH_DATA;
 				}
-#ifdef TERRAINER_MODULE
 			} else if (pi.name == "grid_const") {
-#elif TERRAINER_GDEXTENSION
-			} else if (pi.name == StringName("grid_const")) {
-#endif
 				if (pi.type == Variant::Type::VECTOR2) {
 					material_flags |= SHADER_PARAM_GRID_CONST;
 				}
-#ifdef TERRAINER_MODULE
 			} else if (pi.name == "debug_lod_colors") {
-#elif TERRAINER_GDEXTENSION
-			} else if (pi.name == StringName("debug_lod_colors")) {
-#endif
 				if (pi.type == Variant::Type::OBJECT && pi.hint_string == "Texture2D") {
 					material_flags |= SHADER_PARAM_LOD_COLORS;
 				}
-#ifdef TERRAINER_MODULE
 			} else if (pi.name == "instance_data") {
-#elif TERRAINER_GDEXTENSION
-			} else if (pi.name == StringName("instance_data")) {
-#endif
 				if (pi.type == Variant::Type::OBJECT && pi.hint_string == "Texture2D") {
 					material_flags |= SHADER_PARAM_INSTANCE_DATA;
 				}
-#ifdef TERRAINER_MODULE
 			} else if (pi.name == "hmap_tex") {
-#elif TERRAINER_GDEXTENSION
-			} else if (pi.name == StringName("hmap_tex")) {
-#endif
 				if (pi.type == Variant::Type::OBJECT && pi.hint_string == "TextureLayered") {
 					material_flags |= SHADER_PARAM_HMAP;
 				}
-#ifdef TERRAINER_MODULE
 			} else if (pi.name == "normal_tex") {
-#elif TERRAINER_GDEXTENSION
-			} else if (pi.name == StringName("normal_tex")) {
-#endif
 				if (pi.type == Variant::Type::OBJECT && pi.hint_string == "TextureLayered") {
 					material_flags |= SHADER_PARAM_NORMAL;
 				}
 			}
 		}
+#elif TERRAINER_GDEXTENSION
+		Array params = shader->get_shader_uniform_list();
+
+		for (Variant &p : params) {
+			Dictionary param = p;
+
+			if (param.get("name", "") == "morph_data") {
+				if ((int)param.get("type", Variant::Type::NIL) == Variant::Type::OBJECT && param.get("hint_string", "") == "Texture2D") {
+					material_flags |= SHADER_PARAM_MORPH_DATA;
+				}
+			} else if (param.get("name", "") == "grid_const") {
+				if ((int)param.get("type", Variant::Type::NIL) == Variant::Type::VECTOR2) {
+					material_flags |= SHADER_PARAM_GRID_CONST;
+				}
+			} else if (param.get("name", "") == "debug_lod_colors") {
+				if ((int)param.get("type", Variant::Type::NIL) == Variant::Type::OBJECT && param.get("hint_string", "") == "Texture2D") {
+					material_flags |= SHADER_PARAM_LOD_COLORS;
+				}
+			} else if (param.get("name", "") == "instance_data") {
+				if ((int)param.get("type", Variant::Type::NIL) == Variant::Type::OBJECT && param.get("hint_string", "") == "Texture2D") {
+					material_flags |= SHADER_PARAM_INSTANCE_DATA;
+				}
+			} else if (param.get("name", "") == "hmap_tex") {
+				if ((int)param.get("type", Variant::Type::NIL) == Variant::Type::OBJECT && param.get("hint_string", "") == "TextureLayered") {
+					material_flags |= SHADER_PARAM_HMAP;
+				}
+			} else if (param.get("name", "") == "normal_tex") {
+				if ((int)param.get("type", Variant::Type::NIL) == Variant::Type::OBJECT && param.get("hint_string", "") == "TextureLayered") {
+					material_flags |= SHADER_PARAM_NORMAL;
+				}
+			}
+		}
+#endif
 	}
 
 	if (quad_tree.lod_levels > 0 && (material_flags & SHADER_PARAM_MORPH_DATA) && !(prev_flags & SHADER_PARAM_MORPH_DATA)) {
