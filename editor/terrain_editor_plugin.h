@@ -49,7 +49,6 @@ private:
 	TerrainEditor *terrain_editor = nullptr;
 	Button *panel_button = nullptr;
     Vector<Terrain *> nodes;
-	Vector<HashMap<StringName, Variant>> params;
 
 	void _reset_shaders();
 	void _restore_shaders();
@@ -71,7 +70,6 @@ public:
 	virtual void make_visible(bool p_visible) override;
 	virtual void apply_changes() override;
 	virtual void save_external_data() override;
-	virtual void run_scene(const String &p_scene, Vector<String> &r_args) override;
 #endif // TERRAINER_MODULE
 
 #ifdef TERRAINER_GDEXTENSION
@@ -82,8 +80,7 @@ public:
 	virtual bool _handles(Object *p_object) const override;
 	virtual void _make_visible(bool p_visible) override;
 	virtual void _apply_changes() override;
-	// virtual void _save_external_data() override;
-	// virtual PackedStringArray _run_scene(const String &p_scene, const PackedStringArray &p_args) const;
+	virtual void _save_external_data() override;
 #endif // TERRAINER_GDEXTENSION
 };
 
