@@ -12,29 +12,17 @@
 #ifndef TERRAINER_MAP_STORAGE_H
 #define TERRAINER_MAP_STORAGE_H
 
+#include "sector.h"
+
+#ifdef TERRAINER_MODULE
 #include "core/config/engine.h"
 #include "core/io/dir_access.h"
 #include "core/io/resource.h"
-#include "sector.h"
-
-// #include "aligned_buffer.h"
-// #include "buffer_pool.h"
-// #include "core/io/file_access.h"
-// #include "core/os/thread.h"
-// #include "lod_buffer.h"
-// #include "queue.h"
 #include "scene/resources/texture_rd.h"
-// #include "vector_buffer_pool.h"
-
-// #include "core/object/worker_thread_pool.h"
-// #include "core/os/mutex.h"
-// #include "minmax_map.h"
-// #include "scene/resources/texture_rd.h"
-// #include "servers/rendering/rendering_device_binds.h"
-// #include "servers/rendering/rendering_server.h"
-// #include "../terrain_info.h"
-
-// using namespace rigtorp;
+#elif TERRAINER_GDEXTENSION
+#include <godot_cpp/classes/resource.hpp>
+#include <godot_cpp/classes/texture2d_array_rd.hpp>
+#endif
 
 namespace Terrainer {
 
@@ -365,8 +353,8 @@ private:
     Vector3 predicted_viewer_pos;
     // Vector3 map_scale;
 
-    HashMap<CellKey, Region *> regions;
-    HashMap<CellKey, Sector *> sectors;
+    HashMap<CellKey, Region *, Region::CellKeyHasher> regions;
+    HashMap<CellKey, Sector *, Region::CellKeyHasher> sectors;
 
     //     Vector<size_t> minmax_lod_offsets;
     //     BufferPool<hmap_t> *minmax_buffer = nullptr;
@@ -379,7 +367,7 @@ private:
 //     AlignedBuffer<hmap_t> *hmap_load = nullptr;
 //     VectorBufferPool<hmap_t> *hmap_buffer = nullptr;
 //     Vector<size_t> hmap_lod_offset;
-    Vector<HashMap<NodeKey, TextureLayerData *>> texture_layers;
+    Vector<HashMap<NodeKey, TextureLayerData *, Sector::NodeKeyHasher>> texture_layers;
     Vector<TextureLayerData> layers;
     Vector<TextureLayerData *> ordered_layers;
     int num_layers = 0;
@@ -424,11 +412,6 @@ public:
     static const int MAX_CHUNK_SIZE = 2048;
     static const int MAX_LOD_LEVELS = 15;
     static_assert(Region::MAX_LOD_LEVELS == MAX_LOD_LEVELS);
-    static const StringName path_changed;
-
-    static const String REGION_FILE_BASE_NAME;
-    static const String REGION_FILE_EXTENSION;
-    static const String REGION_FILE_FORMAT;
 
     static constexpr uint16_t HMAP_HOLE_VALUE = UINT16_MAX;
     static constexpr uint16_t HMAP_MAX = HMAP_HOLE_VALUE - 1;

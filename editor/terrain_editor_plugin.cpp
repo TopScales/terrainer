@@ -11,9 +11,11 @@
 
 #include "terrain_editor_plugin.h"
 
+#ifdef TERRAINER_MODULE
 #include "core/object/callable_mp.h"
 #include "core/variant/variant_utility.h"
 #include "scene/main/scene_tree.h"
+#endif // TERRAINER_MODULE
 
 #ifdef TERRAINER_GDEXTENSION
 #include <godot_cpp/classes/scene_tree.hpp>
@@ -32,8 +34,8 @@ void TerrainEditor::edit(Terrain *p_terrain) {
 // 	// }
 // }
 
-// void TerrainEditor::_bind_methods() {
-// }
+void TerrainEditor::_bind_methods() {
+}
 
 // ******** TerrainEditorPlugin ********
 
@@ -78,47 +80,78 @@ void TerrainEditorPlugin::_make_visible(bool p_visible) {
 	ERR_FAIL_NULL(terrain_editor);
 }
 
+#ifdef TERRAINER_MODULE
 void TerrainEditorPlugin::apply_changes() {
-	_reset_shaders();
-}
-
-void TerrainEditorPlugin::save_external_data() {
-	if (shaders_reset) {
-		Terrain **nodes_ptr = nodes.ptrw();
-		HashMap<StringName, Variant> *params_ptr = params.ptrw();
-		shaders_reset = false;
-
-		for (int i = 0; i < nodes.size(); ++i) {
-			Terrain *terrain = nodes_ptr[i];
-
-			if (terrain && VariantUtilityFunctions::is_instance_valid(terrain) && terrain->is_inside_tree()) {
-				terrain->restore_shader(params_ptr[i]);
-			}
-
-			params_ptr[i].clear();
-		}
-	} else {
+#elif TERRAINER_GDEXTENSION
+void TerrainEditorPlugin::_apply_changes() {
+#endif
+	if (!nodes.is_empty()) {
 		_reset_shaders();
+		callable_mp(this, &TerrainEditorPlugin::_restore_shaders).call_deferred();
 	}
 }
 
-void TerrainEditorPlugin::run_scene(const String &p_scene, Vector<String> &r_args) {
-	if (shaders_reset) {
-		Terrain **nodes_ptr = nodes.ptrw();
-		HashMap<StringName, Variant> *params_ptr = params.ptrw();
-		shaders_reset = false;
+// #ifdef TERRAINER_MODULE
+// void TerrainEditorPlugin::save_external_data() {
+// #elif TERRAINER_GDEXTENSION
+// void TerrainEditorPlugin::_save_external_data() {
+// #endif
+// 	if (shaders_reset) {
+// 		Terrain **nodes_ptr = nodes.ptrw();
+// 		HashMap<StringName, Variant> *params_ptr = params.ptrw();
+// 		shaders_reset = false;
 
-		for (int i = 0; i < nodes.size(); ++i) {
-			Terrain *terrain = nodes_ptr[i];
+// 		for (int i = 0; i < nodes.size(); ++i) {
+// 			Terrain *terrain = nodes_ptr[i];
 
-			if (terrain && VariantUtilityFunctions::is_instance_valid(terrain) && terrain->is_inside_tree()) {
-				terrain->restore_shader(params_ptr[i]);
-			}
+// 			if (terrain && terrain->is_inside_tree()) {
+// 				terrain->restore_shader(params_ptr[i]);
+// 			}
 
-			params_ptr[i].clear();
-		}
-	}
-}
+// 			params_ptr[i].clear();
+// 		}
+// 	} else {
+// 		_reset_shaders();
+// 	}
+// }
+
+// #ifdef TERRAINER_MODULE
+// void TerrainEditorPlugin::run_scene(const String &p_scene, Vector<String> &r_args) {
+// 	if (shaders_reset) {
+// 		Terrain **nodes_ptr = nodes.ptrw();
+// 		HashMap<StringName, Variant> *params_ptr = params.ptrw();
+// 		shaders_reset = false;
+
+// 		for (int i = 0; i < nodes.size(); ++i) {
+// 			Terrain *terrain = nodes_ptr[i];
+
+// 			if (terrain && VariantUtilityFunctions::is_instance_valid(terrain) && terrain->is_inside_tree()) {
+// 				terrain->restore_shader(params_ptr[i]);
+// 			}
+
+// 			params_ptr[i].clear();
+// 		}
+// 	}
+// }
+// #elif TERRAINER_GDEXTENSION
+// PackedStringArray TerrainEditorPlugin::_run_scene(const String &p_scene, const PackedStringArray &p_args) const {
+// 	if (shaders_reset) {
+// 		Terrain **nodes_ptr = nodes.ptrw();
+// 		// HashMap<StringName, Variant> *params_ptr = params.ptrw();
+// 		// shaders_reset = false;
+
+// 		// for (int i = 0; i < nodes.size(); ++i) {
+// 		// 	Terrain *terrain = nodes_ptr[i];
+
+// 		// 	if (terrain && VariantUtilityFunctions::is_instance_valid(terrain) && terrain->is_inside_tree()) {
+// 		// 		terrain->restore_shader(params_ptr[i]);
+// 		// 	}
+
+// 		// 	params_ptr[i].clear();
+// 		// }
+// 	}
+// }
+// #endif
 
 void TerrainEditorPlugin::_notification(int p_what) {
 	switch (p_what) {
@@ -140,6 +173,9 @@ void TerrainEditorPlugin::_notification(int p_what) {
 	}
 }
 
+void TerrainEditorPlugin::_bind_methods() {
+}
+
 void TerrainEditorPlugin::_reset_shaders() {
 	Terrain **nodes_ptr = nodes.ptrw();
 	HashMap<StringName, Variant> *params_ptr = params.ptrw();
@@ -147,8 +183,17 @@ void TerrainEditorPlugin::_reset_shaders() {
 	for (int i = 0; i < nodes.size(); ++i) {
 		nodes_ptr[i]->reset_shader(params_ptr[i]);
 	}
+}
 
-	shaders_reset = true;
+void TerrainEditorPlugin::_restore_shaders() {
+	Terrain **nodes_ptr = nodes.ptrw();
+	HashMap<StringName, Variant> *params_ptr = params.ptrw();
+
+	for (int i = 0; i < nodes.size(); ++i) {
+		Terrain *terrain = nodes_ptr[i];
+		terrain->restore_shader(params_ptr[i]);
+		params_ptr[i].clear();
+	}
 }
 
 void TerrainEditorPlugin::_on_tree_node_added(Node *p_node) {

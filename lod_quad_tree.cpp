@@ -12,7 +12,6 @@
 #include "lod_quad_tree.h"
 
 #include "utils/compat_marshalls.h"
-#include "utils/math.h"
 
 using namespace Terrainer;
 
@@ -168,8 +167,8 @@ Ref<ImageTexture> LODQuadTree::get_morph_texture() const {
         float c1 = end / (end - start);
         float c2 = 1.0f / (end - start);
         int64_t index = 4 * i;
-		encode_uint16(MAKE_HALF_FLOAT(c1), &w[index]);
-        encode_uint16(MAKE_HALF_FLOAT(c2), &w[index + 2]);
+		encode_uint16(Math::make_half_float(c1), &w[index]);
+        encode_uint16(Math::make_half_float(c2), &w[index + 2]);
     }
 
     Ref<Image> image = Image::create_from_data(lod_levels, 1, false, Image::FORMAT_RGH, buffer);

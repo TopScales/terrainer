@@ -35,7 +35,7 @@ private:
 
 protected:
     // void _notification(int p_what);
-    // static void _bind_methods();
+    static void _bind_methods();
 
 public:
     EditorPlugin::AfterGUIInput forward_spatial_input_event(Camera3D *p_camera, const Ref<InputEvent> &p_event);
@@ -50,16 +50,16 @@ private:
 	Button *panel_button = nullptr;
     Vector<Terrain *> nodes;
 	Vector<HashMap<StringName, Variant>> params;
-	bool shaders_reset = false;
 
 	void _reset_shaders();
+	void _restore_shaders();
 
     void _on_tree_node_added(Node *p_node);
     void _on_terrain_exited(Terrain *p_terrain);
 
 protected:
 	void _notification(int p_what);
-	// static void _bind_methods();
+	static void _bind_methods();
 
 public:
 #ifdef TERRAINER_MODULE
@@ -81,6 +81,9 @@ public:
 	virtual void _edit(Object *p_object) override;
 	virtual bool _handles(Object *p_object) const override;
 	virtual void _make_visible(bool p_visible) override;
+	virtual void _apply_changes() override;
+	// virtual void _save_external_data() override;
+	// virtual PackedStringArray _run_scene(const String &p_scene, const PackedStringArray &p_args) const;
 #endif // TERRAINER_GDEXTENSION
 };
 

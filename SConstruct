@@ -4,7 +4,7 @@ import sys
 
 GODOT_BINDINGS = os.getenv("GODOT_BINDINGS", "godot-cpp/SConstruct")
 GODOT_BINDINGS = ARGUMENTS.get('GODOT_BINDINGS', GODOT_BINDINGS)
-env = SConscript(GODOT_BINDINGS + "/SConstruct")
+env = SConscript(GODOT_BINDINGS + "/SConstruct", {"api_version": "4.7"})
 
 # For reference:
 # - CCFLAGS are compilation flags shared between C and C++
@@ -18,6 +18,7 @@ env = SConscript(GODOT_BINDINGS + "/SConstruct")
 env.Append(CPPPATH=["./"])
 env.Append(CPPDEFINES=["TERRAINER_GDEXTENSION"])
 sources = Glob("./*.cpp")
+sources.append(Glob("./map_storage/*.cpp"))
 
 if env["target"] == "editor":
     sources.append(Glob("./editor/*.cpp"))

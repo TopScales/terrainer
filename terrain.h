@@ -14,13 +14,13 @@
 
 #include "lod_quad_tree.h"
 #include "map_storage/map_storage.h"
-// #include "terrain_info.h"
-#include "servers/rendering/rendering_server.h"
+
 
 #ifdef TERRAINER_MODULE
 #include "scene/3d/camera_3d.h"
 #include "scene/3d/node_3d.h"
 #include "scene/resources/mesh.h"
+#include "servers/rendering/rendering_server.h"
 #endif // TERRAINER_MODULE
 
 #ifdef TERRAINER_GDEXTENSION
@@ -125,10 +125,16 @@ private:
 protected:
     void _notification(int p_what);
     static void _bind_methods();
+#ifdef TERRAINER_MODULE
     PackedStringArray get_configuration_warnings() const override;
+#endif // TERRAINER_MODULE
     void _validate_property(PropertyInfo &p_property) const;
 
 public:
+#if TERRAINER_GDEXTENSION
+    PackedStringArray _get_configuration_warnings() const override;
+#endif // TERRAINER_GDEXTENSION
+
     void set_camera(Camera3D *p_camera);
 
     void set_storage(const Ref<MapStorage> &p_storage);

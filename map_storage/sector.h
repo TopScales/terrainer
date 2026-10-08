@@ -63,6 +63,12 @@ public:
     };
     static_assert(sizeof(NodeKey) == 8);
 
+    struct NodeKeyHasher {
+		static uint32_t hash(const NodeKey &P) {
+			return P.hash();
+		}
+	};
+
     struct TextureLayerData {
         PackedFloat32Array heights;
         PackedByteArray normals;
@@ -76,7 +82,7 @@ public:
     void get_minmax(const CellKey &p_key, int p_lod, hmap_t &r_min, hmap_t &r_max) const;
     void get_layer_data(const CellKey &p_key, int p_lod, int p_node_size, TextureLayerData &r_layer_data) const;
 
-    Sector(const CellKey &p_sector, HashMap<CellKey, Region *> &p_regions, const RegionSpecs &p_specs);
+    Sector(const CellKey &p_sector, HashMap<CellKey, Region *, Region::CellKeyHasher> &p_regions, const RegionSpecs &p_specs);
     ~Sector();
 };
 

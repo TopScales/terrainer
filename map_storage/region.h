@@ -13,7 +13,14 @@
 #define TERRAINER_REGION_H
 
 #include "../utils/math.h"
+
+#ifdef TERRAINER_MODULE
 #include "core/io/file_access.h"
+#endif // TERRAINER_MODULE
+
+#ifdef TERRAINER_GDEXTENSION
+#include <godot_cpp/classes/file_access.hpp>
+#endif // TERRAINER_GDEXTENSION
 
 namespace Terrainer {
 
@@ -54,6 +61,12 @@ public:
 	    }
     };
     static_assert(sizeof(CellKey) == 4);
+
+    struct CellKeyHasher {
+		static uint32_t hash(const CellKey &P) {
+			return P.hash();
+		}
+	};
 
 private:
     static const size_t FILE_HEADER_INFO_SIZE = 64;
@@ -101,8 +114,8 @@ private:
 
         void config(int p_chunk_lods = MAX_LOD_LEVELS) {
             ERR_FAIL_COND_EDMSG(p_chunk_lods < 0, "Chunk LODs must be positive.");
-            region_lods = MIN((int)Math::log2(float(region_size)) + 1, MAX_LOD_LEVELS);
-            chunk_lods = MIN(MIN((int)Math::log2(float(chunk_size)), MAX_LOD_LEVELS), p_chunk_lods);
+            region_lods = MIN((int)std::log2(float(region_size)) + 1, MAX_LOD_LEVELS);
+            chunk_lods = MIN(MIN((int)std::log2(float(chunk_size)), MAX_LOD_LEVELS), p_chunk_lods);
             const Size extended_chunk_size = (chunk_size + 3) * (chunk_size + 3);
 
             if (minmax_lod_offsets) {
