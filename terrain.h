@@ -165,8 +165,8 @@ public:
     void set_debug_nodes_aabb_enabled(bool p_enabled);
     bool is_debug_nodes_aabb_enabled() const;
 
-    void reset_shader(HashMap<StringName, Variant> &r_params);
-    void restore_shader(const HashMap<StringName, Variant> &p_params);
+    void reset_shader();
+    void restore_shader();
 
 	Terrain();
     ~Terrain();

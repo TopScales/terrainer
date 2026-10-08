@@ -15,10 +15,9 @@
 #include "sector.h"
 
 #ifdef TERRAINER_MODULE
+#include "scene/resources/texture_rd.h"
 #include "core/config/engine.h"
 #include "core/io/dir_access.h"
-#include "core/io/resource.h"
-#include "scene/resources/texture_rd.h"
 #elif TERRAINER_GDEXTENSION
 #include <godot_cpp/classes/resource.hpp>
 #include <godot_cpp/classes/texture2d_array_rd.hpp>
@@ -62,16 +61,9 @@ private:
     static constexpr float CLEANUP_BUFFER_UTILIZATION = 0.9f;
     static constexpr float CLEANUP_TARGET_FRAMES_FACTOR = 0.3f;
 
-    // static const uint8_t FORMAT_LITTLE_ENDIAN = 0x11;
-    // static const uint8_t FORMAT_BIG_ENDIAN = 0x22;
-
     // static const uint8_t FORMAT_PACKED = 0x01;
     // static const uint8_t FORMAT_SPARSE = 0x10;
     // static const uint8_t FORMAT_PACKAGING_MASK = 0x03;
-
-    // static constexpr uint8_t REGION_FLAG_HAS_MINMAX = 1 << 0;
-    // static constexpr uint8_t REGION_FLAG_HAS_HMAP = 1 << 1;
-    // static constexpr uint8_t REGION_FLAG_HAS_SPLAT = 1 << 2;
 
     // static constexpr uint32_t CHUNK_FLAG_HAS_MINMAX = 1 << 0;
     // static constexpr uint32_t CHUNK_FLAG_HAS_HEIGHT = 1 << 1;
@@ -122,25 +114,6 @@ private:
     //     BC3,
     //     BC7
     // };
-
-    // struct alignas(HEADER_SIZE) Header {
-    //     char magic[MAGIC_SIZE];
-    //     uint8_t endianness;
-    //     uint8_t format;
-    //     uint16_t version;
-    //     uint32_t chunk_size;
-    //     uint32_t region_size;
-    //     uint32_t minmax_format;
-    //     uint32_t height_format;
-    //     uint32_t splat_format;
-    //     uint32_t directory_offset;
-    //     uint64_t data_offset;
-    //     // uint8_t reserved[24];
-
-    //     _FORCE_INLINE_ int lods() { return format & FORMAT_SAVED_LODS_MASK; }
-    //     _FORCE_INLINE_ bool is_packed() { return (format & FORMAT_PACKAGING_MASK) == FORMAT_PACKED; }
-    // };
-    // static_assert(sizeof(Header) == HEADER_SIZE);
 
     // struct alignas(SUBHEADER_SIZE) Subheader {
     //     uint8_t presence;

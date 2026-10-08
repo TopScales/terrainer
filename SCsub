@@ -4,13 +4,12 @@ from misc.utility.scons_hints import *
 Import("env")
 Import("env_modules")
 
-env_terrainer = env_modules.Clone()
+env_terrainer = env.Clone()
 
 env_terrainer.Append(CPPDEFINES=["TERRAINER_MODULE", "TERRAINER_DEBUG"])
 
 env_terrainer.add_source_files(env.modules_sources, "*.cpp")
 env_terrainer.add_source_files(env.modules_sources, "map_storage/*.cpp")
+
 if env.editor_build:
     env_terrainer.add_source_files(env.modules_sources, "editor/*.cpp")
-
-# SConscript("shaders/SCsub")

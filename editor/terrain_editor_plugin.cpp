@@ -91,29 +91,16 @@ void TerrainEditorPlugin::_apply_changes() {
 	}
 }
 
-// #ifdef TERRAINER_MODULE
-// void TerrainEditorPlugin::save_external_data() {
-// #elif TERRAINER_GDEXTENSION
-// void TerrainEditorPlugin::_save_external_data() {
-// #endif
-// 	if (shaders_reset) {
-// 		Terrain **nodes_ptr = nodes.ptrw();
-// 		HashMap<StringName, Variant> *params_ptr = params.ptrw();
-// 		shaders_reset = false;
-
-// 		for (int i = 0; i < nodes.size(); ++i) {
-// 			Terrain *terrain = nodes_ptr[i];
-
-// 			if (terrain && terrain->is_inside_tree()) {
-// 				terrain->restore_shader(params_ptr[i]);
-// 			}
-
-// 			params_ptr[i].clear();
-// 		}
-// 	} else {
-// 		_reset_shaders();
-// 	}
-// }
+#ifdef TERRAINER_MODULE
+void TerrainEditorPlugin::save_external_data() {
+#elif TERRAINER_GDEXTENSION
+void TerrainEditorPlugin::_save_external_data() {
+#endif
+	if (!nodes.is_empty()) {
+		_reset_shaders();
+		callable_mp(this, &TerrainEditorPlugin::_restore_shaders).call_deferred();
+	}
+}
 
 // #ifdef TERRAINER_MODULE
 // void TerrainEditorPlugin::run_scene(const String &p_scene, Vector<String> &r_args) {
@@ -178,21 +165,18 @@ void TerrainEditorPlugin::_bind_methods() {
 
 void TerrainEditorPlugin::_reset_shaders() {
 	Terrain **nodes_ptr = nodes.ptrw();
-	HashMap<StringName, Variant> *params_ptr = params.ptrw();
 
 	for (int i = 0; i < nodes.size(); ++i) {
-		nodes_ptr[i]->reset_shader(params_ptr[i]);
+		nodes_ptr[i]->reset_shader();
 	}
 }
 
 void TerrainEditorPlugin::_restore_shaders() {
 	Terrain **nodes_ptr = nodes.ptrw();
-	HashMap<StringName, Variant> *params_ptr = params.ptrw();
 
 	for (int i = 0; i < nodes.size(); ++i) {
 		Terrain *terrain = nodes_ptr[i];
-		terrain->restore_shader(params_ptr[i]);
-		params_ptr[i].clear();
+		terrain->restore_shader();
 	}
 }
 
@@ -202,13 +186,10 @@ void TerrainEditorPlugin::_on_tree_node_added(Node *p_node) {
 	if (terrain && terrain->is_part_of_edited_scene()) {
 		terrain->connect("tree_exited", callable_mp(this, &TerrainEditorPlugin::_on_terrain_exited).bind(terrain));
 		nodes.push_back(terrain);
-		params.push_back(HashMap<StringName, Variant>());
 	}
 }
 
 void TerrainEditorPlugin::_on_terrain_exited(Terrain *p_terrain) {
 	p_terrain->disconnect("tree_exited", callable_mp(this, &TerrainEditorPlugin::_on_terrain_exited));
-	int64_t index = nodes.find(p_terrain);
-	nodes.remove_at(index);
-	params.remove_at(index);
+	nodes.erase(p_terrain);
 }

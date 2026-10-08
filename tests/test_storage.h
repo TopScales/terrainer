@@ -1,5 +1,5 @@
 /**************************************************************************/
-/*  test_storage.cpp                                                      */
+/*  test_storage.h                                                        */
 /**************************************************************************/
 /*                         This file is part of:                          */
 /*                             GODOT ENGINE                               */
@@ -29,6 +29,8 @@
 /**************************************************************************/
 
 #pragma once
+
+#define TERRAINER_MODULE
 
 #include "tests/test_macros.h"
 
@@ -83,10 +85,10 @@ TEST_CASE("[Modules][Terrainer] Storage") {
 		storage->clear();
 		CHECK(storage->load_headers() == OK);
 		CHECK(storage->get_num_regions() == regions.x * regions.y);
-		String file1 = dir_path + vformat(MapStorage::REGION_FILE_FORMAT, 0, 0);
-		String file2 = dir_path + vformat(MapStorage::REGION_FILE_FORMAT, 1, 0);
-		String file3 = dir_path + vformat(MapStorage::REGION_FILE_FORMAT, 0, 1);
-		String file4 = dir_path + vformat(MapStorage::REGION_FILE_FORMAT, 1, 1);
+		String file1 = dir_path + vformat("region_%d_%d.map", 0, 0);
+		String file2 = dir_path + vformat("region_%d_%d.map", 1, 0);
+		String file3 = dir_path + vformat("region_%d_%d.map", 0, 1);
+		String file4 = dir_path + vformat("region_%d_%d.map", 1, 1);
 		bool  files_exist = FileAccess::exists(file1) && FileAccess::exists(file2) && FileAccess::exists(file3) && FileAccess::exists(file4);
 		CHECK(files_exist);
 		int file_size = storage->get_region_file_size();

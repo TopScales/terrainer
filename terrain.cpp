@@ -246,46 +246,51 @@ void Terrain::_notification(int p_what) {
 	}
 }
 
-void Terrain::reset_shader(HashMap<StringName, Variant> &r_params) {
-
+void Terrain::reset_shader() {
 	if (material_flags & SHADER_PARAM_HMAP) {
-		r_params["hmap_tex"] = _material->get_shader_parameter("hmap_tex");
 		_material->set_shader_parameter("hmap_tex", Variant());
 	}
 
 	if (material_flags & SHADER_PARAM_NORMAL) {
-		r_params["normal_tex"] = _material->get_shader_parameter("normal_tex");
 		_material->set_shader_parameter("normal_tex", Variant());
 	}
 
 	if (material_flags & SHADER_PARAM_MORPH_DATA) {
-		r_params["morph_data"] = _material->get_shader_parameter("morph_data");
 		_material->set_shader_parameter("morph_data", Variant());
 	}
 
 	if (material_flags & SHADER_PARAM_LOD_COLORS) {
-		r_params["debug_lod_colors"] = _material->get_shader_parameter("debug_lod_colors");
 		_material->set_shader_parameter("debug_lod_colors", Variant());
 	}
 
 	if (material_flags & SHADER_PARAM_INSTANCE_DATA) {
-		r_params["instance_data"] = _material->get_shader_parameter("instance_data");
 		_material->set_shader_parameter("instance_data", Variant());
 	}
-
 }
 
-void Terrain::restore_shader(const HashMap<StringName, Variant> &p_params) {
-	for (const KeyValue<StringName, Variant> &kv : p_params) {
-#ifdef TERRAINER_MODULE
-		if (VariantUtilityFunctions::is_instance_valid(kv.value)) {
-#elif TERRAINER_GDEXTENSION
-		Object *value = kv.value.get_validated_object();
-
-		if (value) {
-#endif
-			_material->set_shader_parameter(kv.key, kv.value);
+void Terrain::restore_shader() {
+	if (storage_status == OK) {
+		if (material_flags & SHADER_PARAM_HMAP) {
+			_material->set_shader_parameter("hmap_tex", storage->get_hmap_texture());
 		}
+
+		if (material_flags & SHADER_PARAM_NORMAL) {
+			_material->set_shader_parameter("normal_tex", storage->get_normal_texture());
+		}
+	}
+
+	if (quad_tree.lod_levels > 0) {
+		if (material_flags & SHADER_PARAM_MORPH_DATA) {
+			_material->set_shader_parameter("morph_data", quad_tree.get_morph_texture());
+		}
+	}
+
+	if (material_flags & SHADER_PARAM_LOD_COLORS) {
+		_material->set_shader_parameter("debug_lod_colors", debug_lod_colors_tex);
+	}
+
+	if (material_flags & SHADER_PARAM_INSTANCE_DATA) {
+		_material->set_shader_parameter("instance_data", mmesh_instance_data_tex);
 	}
 }
 
@@ -333,8 +338,13 @@ void Terrain::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "debug_nodes_aabb_enabled"), "set_debug_nodes_aabb_enabled", "is_debug_nodes_aabb_enabled");
 }
 
+#ifdef TERRAINER_MODULE
+PackedStringArray Terrain::get_configuration_warnings() const {
+	PackedStringArray warnings = Node::get_configuration_warnings();
+#elif TERRAINER_GDEXTENSION
 PackedStringArray Terrain::_get_configuration_warnings() const {
 	PackedStringArray warnings = Node::_get_configuration_warnings();
+#endif
 
 	if (storage.is_null()) {
 #ifdef TERRAINER_MODULE
