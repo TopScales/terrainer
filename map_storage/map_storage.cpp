@@ -12,20 +12,31 @@
 #include "map_storage.h"
 
 #include "../utils/math.h"
+
+#ifdef TERRAINER_MODULE
 #include "core/object/class_db.h"
 #include "servers/rendering/rendering_server.h"
 #include "servers/rendering/rendering_device.h"
+#elif TERRAINER_GDEXTENSION
+#include <godot_cpp/classes/dir_access.hpp>
+#include <godot_cpp/classes/engine.hpp>
+#include <godot_cpp/classes/rd_texture_format.hpp>
+#include <godot_cpp/classes/rd_texture_view.hpp>
+#include <godot_cpp/classes/rendering_server.hpp>
+
+#define RS RenderingServer
+typedef RenderingDevice RD;
+#endif
 
 using namespace Terrainer;
 
-const StringName MapStorage::path_changed = "path_changed";
-const String MapStorage::REGION_FILE_BASE_NAME("region_");
-const String MapStorage::REGION_FILE_EXTENSION("map");
-const String MapStorage::REGION_FILE_FORMAT(REGION_FILE_BASE_NAME + "%d_%d." + REGION_FILE_EXTENSION);
-
 void MapStorage::store_heightmap_data(const PackedByteArray &p_data, const Vector2i &p_size) {
     ERR_FAIL_COND_EDMSG(directory_path.is_empty(), "Empty directory path.");
+#ifdef TERRAINER_MODULE
     ERR_FAIL_COND_EDMSG(!DirAccess::exists(directory_path), "Storage directory does not exist.");
+#elif TERRAINER_GDEXTENSION
+    ERR_FAIL_COND_EDMSG(!DirAccess::dir_exists_absolute(directory_path), "Storage directory does not exist.");
+#endif
     ERR_FAIL_COND_EDMSG(data_locked, "Failed to store data: data is locked.");
     ERR_FAIL_COND_EDMSG(p_data.size() != p_size.x * p_size.y, "Incorrect data buffer size.");
     _clear_sectors();
@@ -36,7 +47,7 @@ void MapStorage::store_heightmap_data(const PackedByteArray &p_data, const Vecto
     }
 
     const int32_t region_cells = specs.region_size * specs.chunk_size;
-    const CellKey data_regions = CellKey((p_size.x + 1) / region_cells, (p_size.y + 1) / region_cells);
+    const CellKey data_regions = CellKey(Math::ceil((real_t)p_size.x / (real_t)region_cells), Math::ceil((real_t)p_size.y / (real_t)region_cells));
     const size_t pool_size = data_regions.x + 2;
     Vector<Region *> regions_pool;
     size_t pool_index = 0;
@@ -45,9 +56,15 @@ void MapStorage::store_heightmap_data(const PackedByteArray &p_data, const Vecto
     for (uint16_t reg_iz = 0; reg_iz < data_regions.z; ++reg_iz) {
         for (uint16_t reg_ix = 0; reg_ix < data_regions.x; ++reg_ix) {
             const CellKey region_key = {reg_ix, reg_iz};
-            String file_path = vformat(REGION_FILE_FORMAT, reg_ix, reg_iz);
+            String file_path = vformat("region_%d_%d.map", reg_ix, reg_iz);
+#ifdef TERRAINER_MODULE
             Error error;
             Ref<FileAccess> file = FileAccess::open(directory_path.path_join(file_path), FileAccess::WRITE_READ, &error);
+#elif TERRAINER_GDEXTENSION
+            Ref<FileAccess> file = FileAccess::open(directory_path.path_join(file_path), FileAccess::WRITE_READ);
+            Error error = file->get_open_error();
+#endif
+            ERR_CONTINUE_EDMSG(error != OK, vformat("Error while opening map file for region (%d, %d).", reg_ix, reg_iz));
             Region *region = memnew(Region(specs, file));
             region->load_hmap_region(region_key, data_regions, p_data, p_size);
             regions_pool.write[pool_index] = region;
@@ -70,7 +87,11 @@ void MapStorage::store_heightmap_data(const PackedByteArray &p_data, const Vecto
 Error MapStorage::load_headers() {
     if (directory_path.is_empty()) {
         return ERR_FILE_BAD_PATH;
+#ifdef TERRAINER_MODULE
     } else if (!DirAccess::exists(directory_path)) {
+#elif TERRAINER_GDEXTENSION
+    } else if (!DirAccess::dir_exists_absolute(directory_path)) {
+#endif
         return ERR_FILE_NOT_FOUND;
     }
 
@@ -78,8 +99,13 @@ Error MapStorage::load_headers() {
         specs.config();
     }
 
+#ifdef TERRAINER_MODULE
     Error error;
     Ref<DirAccess> dir = DirAccess::open(directory_path, &error);
+#elif TERRAINER_GDEXTENSION
+    Ref<DirAccess> dir = DirAccess::open(directory_path);
+    Error error = dir->get_open_error();
+#endif
     ERR_FAIL_COND_V_EDMSG(error != OK, error, "Error while opening MapStorage directory.");
     error = dir->list_dir_begin();
     ERR_FAIL_COND_V_EDMSG(error != OK, error, "Can't iterate over files in MapStorage directory.");
@@ -92,14 +118,19 @@ Error MapStorage::load_headers() {
             break;
         }
 
-        if (!dir->current_is_dir() && file_name.begins_with(REGION_FILE_BASE_NAME) && file_name.get_extension() == REGION_FILE_EXTENSION) {
+        if (!dir->current_is_dir() && file_name.begins_with("region_") && file_name.get_extension() == "map") {
             PackedStringArray parts = file_name.get_basename().split("_", false);
 
             if (parts.size() == 3 && parts[1].is_valid_int() && parts[2].is_valid_int()) {
                 int x = parts[1].to_int();
                 int z = parts[2].to_int();
                 String file_path = directory_path.path_join(file_name);
+#ifdef TERRAINER_MODULE
                 Ref<FileAccess> file = FileAccess::open(file_path, FileAccess::READ, &error);
+#elif TERRAINER_GDEXTENSION
+                Ref<FileAccess> file = FileAccess::open(file_path, FileAccess::READ);
+                error = file->get_open_error();
+#endif
                 ERR_CONTINUE_EDMSG(error != OK, vformat("Can`t open stream region file %s.", file_path));
                 Region *region = memnew(Region(specs, file));
 
@@ -306,7 +337,7 @@ bool MapStorage::allocate_textures(int p_layers) {
 
 int MapStorage::get_node_texture_layer(const NodeKey &p_key, int p_lod, int p_node_size) {
     ERR_FAIL_INDEX_V_EDMSG(p_lod, specs.lods, 0, vformat("Incorrect LOD level %d (%d).", p_lod, specs.lods));
-    HashMap<NodeKey, TextureLayerData *> &map = texture_layers.write[p_lod];
+    HashMap<NodeKey, TextureLayerData *, Sector::NodeKeyHasher> &map = texture_layers.write[p_lod];
     TextureLayerData **data_ptr = map.getptr(p_key);
 
     if (data_ptr) {
@@ -462,13 +493,17 @@ int MapStorage::get_region_file_size() {
 // }
 
 bool MapStorage::is_directory_set() const {
+#ifdef TERRAINER_MODULE
     return directory_path.is_empty() ? false : DirAccess::exists(directory_path);
+#elif TERRAINER_GDEXTENSION
+    return directory_path.is_empty() ? false : DirAccess::dir_exists_absolute(directory_path);
+#endif
 }
 
 void MapStorage::set_directory_path(const String &p_path) {
     directory_path = p_path;
     clear();
-    emit_signal(path_changed);
+    emit_signal("path_changed");
 }
 
 String MapStorage::get_directory_path() const {
@@ -562,7 +597,7 @@ void MapStorage::_validate_property(PropertyInfo &p_property) const {
 		return;
 	}
 
-	if (size_locked && (p_property.name == "chunk_size" || p_property.name == "region_size")) {
+	if (size_locked && (p_property.name == String("chunk_size") || p_property.name == String("region_size"))) {
         p_property.usage = PROPERTY_USAGE_DEFAULT | PROPERTY_USAGE_READ_ONLY;
 	}
 }
@@ -592,7 +627,7 @@ void MapStorage::_bind_methods() {
     ADD_PROPERTY(PropertyInfo(Variant::BOOL, "size_locked", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_STORAGE), "set_size_locked", "is_size_locked");
     ADD_PROPERTY(PropertyInfo(Variant::BOOL, "data_locked", PROPERTY_HINT_NONE, "", PROPERTY_USAGE_STORAGE), "set_data_locked", "is_data_locked");
 
-    ADD_SIGNAL(MethodInfo(path_changed));
+    ADD_SIGNAL(MethodInfo("path_changed"));
 
     BIND_CONSTANT(MAX_CHUNK_SIZE);
     BIND_CONSTANT(MAX_LOD_LEVELS);
@@ -978,26 +1013,52 @@ bool MapStorage::_allocate_textures(int p_layers) {
     }
 
     num_layers = p_layers;
-    RenderingDevice::TextureFormat height_format;
+#ifdef TERRAINER_MODULE
+    RD::TextureFormat height_format;
     height_format.array_layers = num_layers;
-    height_format.format = RenderingDevice::DATA_FORMAT_R32_SFLOAT;
+    height_format.format = RD::DATA_FORMAT_R32_SFLOAT;
     height_format.width = specs.chunk_size + 1;
     height_format.height = specs.chunk_size + 1;
     height_format.mipmaps = 1;
-    height_format.texture_type = RenderingDevice::TEXTURE_TYPE_2D_ARRAY;
-    height_format.usage_bits = RenderingDevice::TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice::TEXTURE_USAGE_CAN_UPDATE_BIT | RenderingDevice::TEXTURE_USAGE_CAN_COPY_FROM_BIT;
-    RenderingDevice::TextureView tex_view;
+    height_format.texture_type = RD::TEXTURE_TYPE_2D_ARRAY;
+    height_format.usage_bits = RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_CAN_UPDATE_BIT | RD::TEXTURE_USAGE_CAN_COPY_FROM_BIT;
+    RD::TextureView tex_view;
+#elif TERRAINER_GDEXTENSION
+    Ref<RDTextureFormat> height_format;
+    height_format.instantiate();
+    height_format->set_array_layers(num_layers);
+    height_format->set_format(RD::DATA_FORMAT_R32_SFLOAT);
+    height_format->set_width(specs.chunk_size + 1);
+    height_format->set_height(specs.chunk_size + 1);
+    height_format->set_mipmaps(1);
+    height_format->set_texture_type(RD::TEXTURE_TYPE_2D_ARRAY);
+    height_format->set_usage_bits(RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_CAN_UPDATE_BIT | RD::TEXTURE_USAGE_CAN_COPY_FROM_BIT);
+    Ref<RDTextureView> tex_view;
+    tex_view.instantiate();
+#endif
     rd_hmap_texture = rd->texture_create(height_format, tex_view);
     hmap_texture.instantiate();
     hmap_texture->set_texture_rd_rid(rd_hmap_texture);
-    RenderingDevice::TextureFormat normal_format;
+#ifdef TERRAINER_MODULE
+    RD::TextureFormat normal_format;
     normal_format.array_layers = num_layers;
-    normal_format.format = RenderingDevice::DATA_FORMAT_R16G16B16A16_SFLOAT;
+    normal_format.format = RD::DATA_FORMAT_R16G16B16A16_SFLOAT;
     normal_format.width = specs.chunk_size + 1;
     normal_format.height = specs.chunk_size + 1;
     normal_format.mipmaps = 1;
-    normal_format.texture_type = RenderingDevice::TEXTURE_TYPE_2D_ARRAY;
-    normal_format.usage_bits = RenderingDevice::TEXTURE_USAGE_SAMPLING_BIT | RenderingDevice::TEXTURE_USAGE_CAN_UPDATE_BIT | RenderingDevice::TEXTURE_USAGE_CAN_COPY_FROM_BIT;
+    normal_format.texture_type = RD::TEXTURE_TYPE_2D_ARRAY;
+    normal_format.usage_bits = RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_CAN_UPDATE_BIT | RD::TEXTURE_USAGE_CAN_COPY_FROM_BIT;
+#elif TERRAINER_GDEXTENSION
+    Ref<RDTextureFormat> normal_format;
+    normal_format.instantiate();
+    normal_format->set_array_layers(num_layers);
+    normal_format->set_format(RD::DATA_FORMAT_R16G16B16A16_SFLOAT);
+    normal_format->set_width(specs.chunk_size + 1);
+    normal_format->set_height(specs.chunk_size + 1);
+    normal_format->set_mipmaps(1);
+    normal_format->set_texture_type(RD::TEXTURE_TYPE_2D_ARRAY);
+    normal_format->set_usage_bits(RD::TEXTURE_USAGE_SAMPLING_BIT | RD::TEXTURE_USAGE_CAN_UPDATE_BIT | RD::TEXTURE_USAGE_CAN_COPY_FROM_BIT);
+#endif
     rd_normal_texture = rd->texture_create(normal_format, tex_view);
     normal_texture.instantiate();
     normal_texture->set_texture_rd_rid(rd_normal_texture);

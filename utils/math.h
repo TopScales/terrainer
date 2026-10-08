@@ -17,6 +17,7 @@
 #endif // TERRAINER_MODULE
 
 #ifdef TERRAINER_GDEXTENSION
+#include <godot_cpp/core/defs.hpp>
 #include <godot_cpp/variant/builtin_types.hpp>
 
 using namespace godot;
@@ -105,60 +106,6 @@ inline int lod_geom_expand(int p_size, int p_lods) {
 inline int lod_geom_expand_sqr(int p_size, int p_lods) {
 	return int(4.0 * p_size * (1.0 - 1.0 / float(1 << (2 * p_lods))) / 3.0);
 }
-
-#ifdef TERRAINER_MODULE
-#define MAKE_HALF_FLOAT(v) Math::make_half_float(v)
-#elif TERRAINER_GDEXTENSION
-_ALWAYS_INLINE_ uint16_t make_half_float(float p_value) {
-	union {
-		float fv;
-		uint32_t ui;
-	} ci;
-	ci.fv = p_value;
-
-	uint32_t x = ci.ui;
-	uint32_t sign = (unsigned short)(x >> 31);
-	uint32_t mantissa;
-	uint32_t exponent;
-	uint16_t hf;
-
-	// get mantissa
-	mantissa = x & ((1 << 23) - 1);
-	// get exponent bits
-	exponent = x & (0xFF << 23);
-	if (exponent >= 0x47800000) {
-		// check if the original single precision float number is a NaN
-		if (mantissa && (exponent == (0xFF << 23))) {
-			// we have a single precision NaN
-			mantissa = (1 << 23) - 1;
-		} else {
-			// 16-bit half-float representation stores number as Inf
-			mantissa = 0;
-		}
-		hf = (((uint16_t)sign) << 15) | (uint16_t)((0x1F << 10)) |
-				(uint16_t)(mantissa >> 13);
-	}
-	// check if exponent is <= -15
-	else if (exponent <= 0x38000000) {
-		/*
-		// store a denorm half-float value or zero
-		exponent = (0x38000000 - exponent) >> 23;
-		mantissa >>= (14 + exponent);
-
-		hf = (((uint16_t)sign) << 15) | (uint16_t)(mantissa);
-		*/
-		hf = 0; //denormals do not work for 3D, convert to zero
-	} else {
-		hf = (((uint16_t)sign) << 15) |
-				(uint16_t)((exponent - 0x38000000) >> 13) |
-				(uint16_t)(mantissa >> 13);
-	}
-
-	return hf;
-}
-
-#define MAKE_HALF_FLOAT(v) make_half_float(v)
-#endif
 
 } // namespace Terrainer
 

@@ -11,24 +11,24 @@
 
 #include "terrain.h"
 
+#include "utils/compat_marshalls.h"
+
+#ifdef TERRAINER_MODULE
 #include "core/object/callable_mp.h"
 #include "core/object/class_db.h"
 #include "core/variant/variant_utility.h"
-#include "utils/compat_marshalls.h"
-#include "servers/rendering/shader_include_db.h"
-// #include "utils/macros.h"
-// #include "utils/math.h"
-
-#ifdef TERRAINER_MODULE
 #include "scene/main/viewport.h"
+#include "servers/rendering/shader_include_db.h"
 #endif // TERRAINER_MODULE
 
 #ifdef TERRAINER_GDEXTENSION
 #include <godot_cpp/classes/engine.hpp>
-#include <godot_cpp/classes/mesh.hpp>
+// #include <godot_cpp/classes/mesh.hpp>
 #include <godot_cpp/classes/rendering_server.hpp>
 #include <godot_cpp/classes/viewport.hpp>
 #include <godot_cpp/classes/world3d.hpp>
+
+#define RS RenderingServer
 #endif // TERRAINER_GDEXTENSION
 
 using namespace Terrainer;
@@ -44,15 +44,23 @@ void Terrain::set_camera(Camera3D *p_camera) {
 
 void Terrain::set_storage(const Ref<MapStorage> &p_storage) {
 	if (storage.is_valid()) {
+#ifdef TERRAINER_MODULE
 		storage->disconnect_changed(callable_mp(this, &Terrain::_storage_changed));
-		storage->disconnect(MapStorage::path_changed, callable_mp(this, &Terrain::_storage_path_changed));
+#elif TERRAINER_GDEXTENSION
+		storage->disconnect("changed", callable_mp(this, &Terrain::_storage_changed));
+#endif
+		storage->disconnect("path_changed", callable_mp(this, &Terrain::_storage_path_changed));
 	}
 
 	storage = p_storage;
 
 	if (storage.is_valid()) {
+#ifdef TERRAINER_MODULE
 		storage->connect_changed(callable_mp(this, &Terrain::_storage_changed));
-		storage->connect(MapStorage::path_changed, callable_mp(this, &Terrain::_storage_path_changed));
+#elif TERRAINER_GDEXTENSION
+		storage->connect("changed", callable_mp(this, &Terrain::_storage_changed));
+#endif
+		storage->connect("path_changed", callable_mp(this, &Terrain::_storage_path_changed));
 		storage_status = storage->load_headers();
 		_storage_changed();
 	} else {
@@ -269,7 +277,13 @@ void Terrain::reset_shader(HashMap<StringName, Variant> &r_params) {
 
 void Terrain::restore_shader(const HashMap<StringName, Variant> &p_params) {
 	for (const KeyValue<StringName, Variant> &kv : p_params) {
+#ifdef TERRAINER_MODULE
 		if (VariantUtilityFunctions::is_instance_valid(kv.value)) {
+#elif TERRAINER_GDEXTENSION
+		Object *value = kv.value.get_validated_object();
+
+		if (value) {
+#endif
 			_material->set_shader_parameter(kv.key, kv.value);
 		}
 	}
@@ -319,20 +333,32 @@ void Terrain::_bind_methods() {
 	ADD_PROPERTY(PropertyInfo(Variant::BOOL, "debug_nodes_aabb_enabled"), "set_debug_nodes_aabb_enabled", "is_debug_nodes_aabb_enabled");
 }
 
-PackedStringArray Terrain::get_configuration_warnings() const {
-	PackedStringArray warnings = Node::get_configuration_warnings();
+PackedStringArray Terrain::_get_configuration_warnings() const {
+	PackedStringArray warnings = Node::_get_configuration_warnings();
 
 	if (storage.is_null()) {
+#ifdef TERRAINER_MODULE
 		warnings.push_back(RTR("MapStorage resource is missing."));
+#elif TERRAINER_GDEXTENSION
+		warnings.push_back("MapStorage resource is missing.");
+#endif
 	} else if (!storage->is_directory_set()) {
+#ifdef TERRAINER_MODULE
 		warnings.push_back(RTR("Set a storage directory in the MapStorage resource."));
+#elif TERRAINER_GDEXTENSION
+		warnings.push_back("Set a storage directory in the MapStorage resource.");
+#endif
 	}
 
 	return warnings;
 }
 
 void Terrain::_validate_property(PropertyInfo &p_property) const {
+#ifdef TERRAINER_MODULE
 	if (p_property.name == "debug_show_wireframe") {
+#elif TERRAINER_GDEXTENSION
+	if (p_property.name == StringName("debug_show_wireframe")) {
+#endif
 		p_property.usage = debug_show_lod_color ? PROPERTY_USAGE_DEFAULT : PROPERTY_USAGE_STORAGE;
 	}
 }
@@ -477,7 +503,11 @@ void Terrain::_update_nodes() {
 	int instance_index = 0;
 
 	if (rs->multimesh_get_instance_count(mm_chunks) < quad_tree.selection_count) {
+#ifdef TERRAINER_MODULE
 		rs->multimesh_allocate_data(mm_chunks, quad_tree.selection_count, RenderingServerEnums::MULTIMESH_TRANSFORM_3D);
+#elif TERRAINER_GDEXTENSION
+		rs->multimesh_allocate_data(mm_chunks, quad_tree.selection_count, RenderingServer::MULTIMESH_TRANSFORM_3D);
+#endif
 	}
 
 	for (int i = 0; i < quad_tree.selection_count; ++i) {
@@ -619,10 +649,17 @@ void Terrain::_create_mesh() {
 	RenderingServer *const rs = RenderingServer::get_singleton();
 	rs->mesh_clear(mesh);
 	Array arrays;
+#ifdef TERRAINER_MODULE
 	arrays.resize(RSE::ARRAY_MAX);
 	arrays[RSE::ARRAY_VERTEX] = vertices;
 	arrays[RSE::ARRAY_INDEX] = indices;
 	rs->mesh_add_surface_from_arrays(mesh, RSE::PRIMITIVE_TRIANGLES, arrays);
+#elif TERRAINER_GDEXTENSION
+	arrays.resize(RS::ARRAY_MAX);
+	arrays[RS::ARRAY_VERTEX] = vertices;
+	arrays[RS::ARRAY_INDEX] = indices;
+	rs->mesh_add_surface_from_arrays(mesh, RS::PRIMITIVE_TRIANGLES, arrays);
+#endif
 	mesh_valid = true;
 
 	if (_material.is_valid()) {
@@ -710,7 +747,11 @@ void Terrain::_set_material() {
 	Callable update_material = callable_mp(this, &Terrain::_update_material_params);
 
 	if (_material.is_valid() && _material->is_connected("changed", update_material)) {
+#ifdef TERRAINER_MODULE
 		_material->disconnect_changed(update_material);
+#elif TERRAINER_GDEXTENSION
+		_material->disconnect("changed", update_material);
+#endif
 	}
 
 	if (debug_show_lod_color) {
@@ -719,7 +760,11 @@ void Terrain::_set_material() {
 		material_flags = 0;
 		_material = material;
 		_update_material_params();
+#ifdef TERRAINER_MODULE
 		_material->connect_changed(update_material);
+#elif TERRAINER_GDEXTENSION
+		_material->connect("changed", update_material);
+#endif
 
 		if (_shader.is_valid()) {
 			RS::get_singleton()->free_rid(_shader);
@@ -737,7 +782,7 @@ void Terrain::_set_default_material() {
 	_material.instantiate();
 	RenderingServer *const rs = RenderingServer::get_singleton();
 
-	if (_shader.is_null()) {
+	if (!_shader.is_valid()) {
 		_shader = rs->shader_create();
 	}
 
@@ -838,27 +883,51 @@ void Terrain::_update_material_params() {
 		shader->get_shader_uniform_list(&params);
 
 		for (PropertyInfo &pi : params) {
+#ifdef TERRAINER_MODULE
 			if (pi.name == "morph_data") {
+#elif TERRAINER_GDEXTENSION
+			if (pi.name == StringName("morph_data")) {
+#endif
 				if (pi.type == Variant::Type::OBJECT && pi.hint_string == "Texture2D") {
 					material_flags |= SHADER_PARAM_MORPH_DATA;
 				}
+#ifdef TERRAINER_MODULE
 			} else if (pi.name == "grid_const") {
+#elif TERRAINER_GDEXTENSION
+			} else if (pi.name == StringName("grid_const")) {
+#endif
 				if (pi.type == Variant::Type::VECTOR2) {
 					material_flags |= SHADER_PARAM_GRID_CONST;
 				}
+#ifdef TERRAINER_MODULE
 			} else if (pi.name == "debug_lod_colors") {
+#elif TERRAINER_GDEXTENSION
+			} else if (pi.name == StringName("debug_lod_colors")) {
+#endif
 				if (pi.type == Variant::Type::OBJECT && pi.hint_string == "Texture2D") {
 					material_flags |= SHADER_PARAM_LOD_COLORS;
 				}
+#ifdef TERRAINER_MODULE
 			} else if (pi.name == "instance_data") {
+#elif TERRAINER_GDEXTENSION
+			} else if (pi.name == StringName("instance_data")) {
+#endif
 				if (pi.type == Variant::Type::OBJECT && pi.hint_string == "Texture2D") {
 					material_flags |= SHADER_PARAM_INSTANCE_DATA;
 				}
+#ifdef TERRAINER_MODULE
 			} else if (pi.name == "hmap_tex") {
+#elif TERRAINER_GDEXTENSION
+			} else if (pi.name == StringName("hmap_tex")) {
+#endif
 				if (pi.type == Variant::Type::OBJECT && pi.hint_string == "TextureLayered") {
 					material_flags |= SHADER_PARAM_HMAP;
 				}
+#ifdef TERRAINER_MODULE
 			} else if (pi.name == "normal_tex") {
+#elif TERRAINER_GDEXTENSION
+			} else if (pi.name == StringName("normal_tex")) {
+#endif
 				if (pi.type == Variant::Type::OBJECT && pi.hint_string == "TextureLayered") {
 					material_flags |= SHADER_PARAM_NORMAL;
 				}
@@ -1010,13 +1079,24 @@ void Terrain::_debug_nodes_aabb_create() {
 		Color(0.5,0.5,0.5), Color(0.0,0.5,0.5), Color(0.5,0.5,0.0), Color(0.0,0.5,0.0),
 	};
 	Array arrays;
-	arrays.resize(Mesh::ARRAY_MAX);
-	arrays[Mesh::ARRAY_VERTEX] = vertices;
-	arrays[Mesh::ARRAY_INDEX] = indices;
-	arrays[Mesh::ARRAY_COLOR] = colors;
-	RenderingServer *const rs = RenderingServer::get_singleton();
+#ifdef TERRAINER_MODULE
+	arrays.resize(RSE::ARRAY_MAX);
+	arrays[RSE::ARRAY_VERTEX] = vertices;
+	arrays[RSE::ARRAY_INDEX] = indices;
+	arrays[RSE::ARRAY_COLOR] = colors;
+#elif TERRAINER_GDEXTENSION
+	arrays.resize(RS::ARRAY_MAX);
+	arrays[RS::ARRAY_VERTEX] = vertices;
+	arrays[RS::ARRAY_INDEX] = indices;
+	arrays[RS::ARRAY_COLOR] = colors;
+#endif
+	RenderingServer *const rs = RS::get_singleton();
 	debug_aabb.mesh = rs->mesh_create();
-	rs->mesh_add_surface_from_arrays(debug_aabb.mesh, RenderingServerEnums::PRIMITIVE_TRIANGLES, arrays);
+#ifdef TERRAINER_MODULE
+	rs->mesh_add_surface_from_arrays(debug_aabb.mesh, RSE::PRIMITIVE_TRIANGLES, arrays);
+#elif TERRAINER_GDEXTENSION
+	rs->mesh_add_surface_from_arrays(debug_aabb.mesh, RS::PRIMITIVE_TRIANGLES, arrays);
+#endif
 	debug_aabb.shader = rs->shader_create();
 	const String shader_code = R"(
 shader_type spatial;
@@ -1058,7 +1138,11 @@ void fragment() {
 		rs->instance_set_base(debug_aabb.instance, debug_aabb.multimesh);
 	}
 
-	rs->instance_geometry_set_cast_shadows_setting(debug_aabb.instance, RenderingServerEnums::SHADOW_CASTING_SETTING_OFF);
+#ifdef TERRAINER_MODULE
+	rs->instance_geometry_set_cast_shadows_setting(debug_aabb.instance, RSE::SHADOW_CASTING_SETTING_OFF);
+#elif TERRAINER_GDEXTENSION
+	rs->instance_geometry_set_cast_shadows_setting(debug_aabb.instance, RS::SHADOW_CASTING_SETTING_OFF);
+#endif
 
 	if (quad_tree.lod_levels > 0) {
 		_debug_set_lod_colors();
@@ -1090,7 +1174,11 @@ void Terrain::_debug_nodes_aabb_free() {
 void Terrain::_debug_nodes_aabb_draw() const {
 	RenderingServer *const rs = RenderingServer::get_singleton();
 	int num_nodes = quad_tree.selection_count;
-	rs->multimesh_allocate_data(debug_aabb.multimesh, num_nodes, RenderingServerEnums::MULTIMESH_TRANSFORM_3D);
+#ifdef TERRAINER_MODULE
+	rs->multimesh_allocate_data(debug_aabb.multimesh, num_nodes, RSE::MULTIMESH_TRANSFORM_3D);
+#elif TERRAINER_GDEXTENSION
+	rs->multimesh_allocate_data(debug_aabb.multimesh, num_nodes, RS::MULTIMESH_TRANSFORM_3D);
+#endif
 
 	for (int i = 0; i < num_nodes; ++i) {
 		const LODQuadTree::QTNode &node = *quad_tree.get_selected_node(i);
@@ -1115,9 +1203,15 @@ void Terrain::_debug_set_lod_colors() {
 		int index = i / 2 + half * (i % 2);
 		Color color = Color::from_hsv((real_t)index / (real_t)quad_tree.lod_levels, 0.8, 0.9);
 		int ii = 3 * i;
+#ifdef TERRAINER_MODULE
 		colors.write[ii] = color.get_r8();
 		colors.write[ii + 1] = color.get_g8();
 		colors.write[ii + 2] = color.get_b8();
+#elif TERRAINER_GDEXTENSION
+		colors[ii] = color.get_r8();
+		colors[ii + 1] = color.get_g8();
+		colors[ii + 2] = color.get_b8();
+#endif
 	}
 
 	Ref<Image> image = Image::create_from_data(quad_tree.lod_levels, 1, false, Image::FORMAT_RGB8, colors);
@@ -1148,7 +1242,7 @@ void Terrain::_set_debug_material() {
 	_material.instantiate();
 	RenderingServer *const rs = RenderingServer::get_singleton();
 
-	if (_shader.is_null()) {
+	if (!_shader.is_valid()) {
 		_shader = rs->shader_create();
 	}
 
@@ -1257,6 +1351,11 @@ Terrain::Terrain() {
 	rs->instance_set_base(mm_instance, mm_chunks);
 	set_notify_transform(true);
 	set_process_internal(true);
+#ifdef TERRAINER_MODULE
+	rs->instance_geometry_set_cast_shadows_setting(mm_instance, RSE::SHADOW_CASTING_SETTING_OFF);
+#elif TERRAINER_GDEXTENSION
+	rs->instance_geometry_set_cast_shadows_setting(mm_instance, RS::SHADOW_CASTING_SETTING_OFF);
+#endif
 }
 
 Terrain::~Terrain() {

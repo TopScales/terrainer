@@ -43,6 +43,22 @@ static inline uint16_t decode_uint16(const uint8_t *p_arr) {
 
 	return u;
 }
+
+static inline unsigned int encode_half(float p_float, uint8_t *p_arr) {
+	encode_uint16(Math::make_half_float(p_float), p_arr);
+
+	return sizeof(uint16_t);
+}
+
+static inline unsigned int encode_uint64(uint64_t p_uint, uint8_t *p_arr) {
+	for (int i = 0; i < 8; i++) {
+		*p_arr = p_uint & 0xFF;
+		p_arr++;
+		p_uint >>= 8;
+	}
+
+	return sizeof(uint64_t);
+}
 #endif // TERRAINER_GDEXTENSION
 
 

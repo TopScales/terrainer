@@ -117,7 +117,7 @@ void Sector::get_layer_data(const CellKey &p_key, int p_lod, int p_node_size, Te
     }
 }
 
-Sector::Sector(const CellKey &p_sector, HashMap<CellKey, Region*> &p_regions, const RegionSpecs &p_specs)
+Sector::Sector(const CellKey &p_sector, HashMap<CellKey, Region*, Region::CellKeyHasher> &p_regions, const RegionSpecs &p_specs)
     : specs(p_specs)
 {
     real_t nreg = (real_t)specs.sector_size / (real_t)specs.region_size;
