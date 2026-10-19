@@ -234,7 +234,6 @@ private:
         uint8_t format;
         uint8_t region_lods: 4;
         uint8_t chunk_lods: 4;
-        uint8_t u8_reserved = 0;
         uint32_t chunk_size;
         uint32_t region_size;
     };
