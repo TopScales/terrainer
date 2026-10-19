@@ -11,13 +11,15 @@ Terrainer renders the entire terrain using a single **MultiMesh**, meaning all c
 
 The LOD transitions are handled smoothly in the vertex shader, following the principles of the [CDLOD](https://github.com/fstrugar/CDLOD) technique. This allows seamless blending between detail levels without visible popping.
 
+![Terrainer Screenshot](media/screenshot.png)
+
 ---
 
 ## 🚀 Features
 
 - [x] Automatic adjustment of LOD levels
 - [x] GPU vertex morphing for smooth LOD transitions
-- [ ] Heightmap-based terrain shape definition
+- [x] Heightmap-based terrain shape definition
 - [ ] Streaming system for chunk data (load only what’s needed)
 - [ ] In-editor terrain editing tools
 - [ ] Biome painting (define shape and textures per biome)
@@ -26,7 +28,7 @@ The LOD transitions are handled smoothly in the vertex shader, following the pri
 
 ## 🧩 Compatibility
 
-- **Engine:** Godot 4.5
+- **Engine:** Godot 4.7
   *(Earlier versions haven’t been tested yet)*
 
 ---
